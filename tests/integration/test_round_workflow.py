@@ -6,7 +6,8 @@ from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, delete, select, update
+from sqlalchemy.exc import DBAPIError
 
 from super6.features.point_in_time import MatchHistory
 from super6.ingestion.canonicalize import TeamRegistry
@@ -106,6 +107,16 @@ def test_full_round_lifecycle(engine: Engine, rules: CompetitionRules,
         locked = s.get(PredictionRun, fc.run_id)
         assert locked is not None
         locked.status = RunStatus.PUBLISHED.value
+
+    # The database itself refuses bulk statements that bypass the ORM guard.
+    for stmt in (
+        update(Recommendation).where(Recommendation.run_id == fc.run_id).values(home_goals=9),
+        delete(ScoreProbability).where(ScoreProbability.run_id == fc.run_id),
+        update(PredictionRun).where(PredictionRun.id == fc.run_id).values(cutoff_at=kickoff),
+        delete(PredictionRun).where(PredictionRun.id == fc.run_id),
+    ):
+        with pytest.raises(DBAPIError), session_scope(engine) as s:
+            s.execute(stmt, execution_options={"synchronize_session": False})
 
     # Settle: results for five fixtures only → waits; then the sixth arrives.
     with session_scope(engine) as s:

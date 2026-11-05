@@ -10,6 +10,7 @@ from typing import Any
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
+from super6.storage import triggers
 from super6.storage.models import Base
 
 
@@ -32,8 +33,13 @@ def make_engine(url: str, echo: bool = False, **kwargs: Any) -> Engine:
 
 
 def create_schema(engine: Engine) -> None:
-    """Create all tables directly (tests, quick local use). Deployments use Alembic."""
+    """Create all tables and triggers directly (tests, quick local use).
+
+    Deployments use Alembic (``super6 db init``), which produces the same schema.
+    """
     Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        triggers.install(conn)
 
 
 @contextmanager
