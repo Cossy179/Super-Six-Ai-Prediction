@@ -84,6 +84,9 @@ commands at the top of [`docker-compose.yml`](docker-compose.yml).
 6. **Enter the picks yourself** on the official Super 6 site.
 7. **Settle** after the matches: `super6 data download && super6 data ingest && super6 settle <round-id>`.
 
+To test the model on real past rounds, add verified round files to `rounds/history/` and
+run `super6 replay-rounds rounds/history` (see `docs/OPERATIONS.md`).
+
 Other commands: `super6 runs list`, `super6 runs show <id>`, `super6 ratings --competition E0`,
 `super6 backtest --start 2023-07-01 --end 2026-11-05`, and `super6 --help`.
 
