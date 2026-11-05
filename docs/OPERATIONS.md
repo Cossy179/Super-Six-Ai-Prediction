@@ -16,9 +16,9 @@ never in the repository.
 
 1. `super6 data download && super6 data ingest`, then `super6 data status`. Check the
    latest result dates and any new quality issues.
-2. Check the official rules. If anything changed, update `configs/competition_rules.yaml`
-   and bump `rules_version`. When the rules have been checked against the operator's
-   terms, set `verified: true` and `verified_on`.
+2. Check the official rules if a new season's terms have appeared or the operator has
+   announced a change. Compare them with `docs/RULES.md`, update
+   `configs/competition_rules.yaml`, and bump `rules_version` (round files must match it).
 3. Write the round file from the official fixture list and deadline.
 4. `super6 predict …`. Read the warnings:
    - `RESULTS_STALE` / `TEAM_DATA_STALE`: refresh the data first.

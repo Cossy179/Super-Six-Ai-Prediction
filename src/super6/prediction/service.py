@@ -171,6 +171,26 @@ def forecast_round(
             half_time_break_minutes=float(gg_cfg.get("half_time_break_minutes", 15.0)),
         )
         warnings.append("GOLDEN_GOAL_BASELINE_ONLY")
+        if len({fx.kickoff_utc for fx in resolved.fixtures}) > 1:
+            other = ("first_in_real_time" if rules.golden_goal_first_goal ==
+                     "earliest_match_minute" else "earliest_match_minute")
+            alt = simulate_golden_goal(
+                [GoldenGoalFixture(fx.fixture_id, fx.kickoff_utc, p.lam_home + p.lam_away)
+                 for fx, p in zip(resolved.fixtures, predictions, strict=True)],
+                rules.model_copy(update={"golden_goal_first_goal": other}),
+                n_simulations=int(gg_cfg.get("n_simulations", 50_000)),
+                seed=int(gg_cfg.get("seed", 20261105)),
+                first_half_stoppage_minutes=float(
+                    gg_cfg.get("first_half_stoppage_minutes", 2.0)),
+                second_half_stoppage_minutes=float(
+                    gg_cfg.get("second_half_stoppage_minutes", 5.0)),
+                half_time_break_minutes=float(gg_cfg.get("half_time_break_minutes", 15.0)),
+            )
+            if alt.minute != gg.minute:
+                warnings.append(
+                    f"GOLDEN_GOAL_STAGGERED_KICKOFFS: minute {gg.minute} assumes "
+                    f"'{rules.golden_goal_first_goal}'; under '{other}' it would be "
+                    f"{alt.minute}")
     version = code_version()
     fingerprint = stable_hash({
         "view": view.fingerprint(),

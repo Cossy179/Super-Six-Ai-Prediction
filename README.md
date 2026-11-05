@@ -94,7 +94,7 @@ Other commands: `super6 runs list`, `super6 runs show <id>`, `super6 ratings --c
 
 | Area | Module | Notes |
 |---|---|---|
-| Competition rules | `configs/competition_rules.yaml`, `rules.py` | Strict schema; unknown or changed settings block predictions. **Not yet verified** against official terms. |
+| Competition rules | `configs/competition_rules.yaml`, `rules.py` | Strict schema; unknown or changed settings block predictions. Checked against the 2026/27 terms; see [`docs/RULES.md`](docs/RULES.md) |
 | Ingestion | `ingestion/` | Football-Data.co.uk adapter; raw files kept with checksum and retrieval time; validation and quarantine; alias review warnings |
 | Storage | `storage/`, `migrations/` | DESIGN §14 schema, Alembic migrations (SQLite + PostgreSQL), immutable locked runs |
 | Point-in-time data | `features/point_in_time.py` | The only path from history to models: results published and odds collected before the cutoff |

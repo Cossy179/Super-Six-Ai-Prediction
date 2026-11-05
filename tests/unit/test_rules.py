@@ -16,10 +16,17 @@ def _write(tmp_path: Path, **changes: object) -> Path:
     return path
 
 
-def test_default_rules_load_and_are_flagged_unverified() -> None:
+def test_default_rules_match_the_checked_terms() -> None:
     rules = load_rules(REPO / "configs" / "competition_rules.yaml")
     assert (rules.points_exact_score, rules.points_correct_result_only) == (5, 2)
     assert rules.golden_goal_minute_indexing == "one_based"
+    assert rules.golden_goal_stoppage_time == "capped_at_period_end"
+    assert rules.golden_goal_no_goal_minute == 0
+    assert rules.verified and rules.warnings() == []
+
+
+def test_unverified_rules_are_flagged(tmp_path: Path) -> None:
+    rules = load_rules(_write(tmp_path, verified=False, verified_on=None))
     assert "RULES_UNVERIFIED" in rules.warnings()
 
 
