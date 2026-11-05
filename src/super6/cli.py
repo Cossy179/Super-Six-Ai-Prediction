@@ -209,6 +209,7 @@ def _print_forecast(payload: dict[str, Any]) -> None:
 def predict(round_file: str, model_name: str | None, cutoff: str | None, publish: bool,
             json_path: str | None, save: bool) -> None:
     """Forecast a six-fixture round from a verified round file."""
+    from super6.models.base import CutoffAfterKickoffError
     from super6.prediction.service import forecast_round, forecast_to_json, persist_forecast
     from super6.storage.repositories import load_history, load_registry
 
@@ -229,7 +230,11 @@ def predict(round_file: str, model_name: str | None, cutoff: str | None, publish
         if not resolved.fixtures:
             raise click.ClickException("no fixtures could be resolved:\n  "
                                        + "\n  ".join(resolved.block_reasons))
-        fc = forecast_round(history, resolved, cut, model, rules, defaults.get("golden_goal"))
+        try:
+            fc = forecast_round(history, resolved, cut, model, rules,
+                                defaults.get("golden_goal"))
+        except CutoffAfterKickoffError as exc:
+            raise click.ClickException(str(exc)) from exc
         status = fc.status.value
         if save:
             run = persist_forecast(session, resolved, fc, publish=publish)

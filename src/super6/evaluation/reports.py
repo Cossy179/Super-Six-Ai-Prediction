@@ -115,7 +115,7 @@ def build_report(rows: pd.DataFrame, rounds: pd.DataFrame, *, reference: str,
         "- Each cutoff is one minute before that day's first kick-off; models only see "
         "results published and odds collected before it.",
         "- Hyperparameters are the documented defaults in `configs/model_defaults.yaml`; "
-        "none were tuned on this window.",
+        "check that none were chosen using this window.",
         "",
         "## Overall",
         "",

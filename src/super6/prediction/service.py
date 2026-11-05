@@ -24,7 +24,7 @@ from super6.evaluation.metrics import actual_result, exact_log_loss, ranked_prob
 from super6.features.point_in_time import MatchHistory, empty_odds_frame
 from super6.golden_goal.simulate import GoldenGoalFixture, GoldenGoalForecast, simulate_golden_goal
 from super6.ingestion.canonicalize import TeamRegistry
-from super6.models.base import Prediction, ScoreModel
+from super6.models.base import CutoffAfterKickoffError, Prediction, ScoreModel
 from super6.prediction.optimiser import (
     TIE_BREAK_RULE,
     Objective,
@@ -137,6 +137,11 @@ def forecast_round(
     deadline = resolved.spec.deadline_utc
     if cutoff_ts > pd.Timestamp(deadline):
         blocks.append(f"CUTOFF_AFTER_DEADLINE: {cutoff_ts} > {deadline}")
+    started = [f.fixture_id for f in resolved.fixtures if pd.Timestamp(f.kickoff_utc) <= cutoff_ts]
+    if started:
+        raise CutoffAfterKickoffError(
+            f"cutoff {cutoff_ts} is not before kick-off of {', '.join(started)}; forecasts "
+            "must be made before matches start")
     hist = history.with_extra(odds=_odds_frame(resolved.odds)) if resolved.odds else history
     view = hist.view(cutoff_ts)
     fitted = model.fit(view)

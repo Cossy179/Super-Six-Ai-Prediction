@@ -32,11 +32,29 @@ Example output for the **illustrative** round file (invented fixtures, not an of
 
 ```text
 fixture                                     points  jackpot  P(jackpot pick)  E[pts]  H/D/A              xG h/a
-Arsenal v Newcastle United                  2-0     2-0      12.5%            1.73    67.6%/19.9%/12.4%  2.08/0.77
-Manchester United v Brighton & Hove Albion  1-2     1-1      11.6%            1.05    35.3%/25.0%/39.7%  1.43/1.53
+Arsenal v Newcastle United                  2-0     2-0      12.8%            1.75    68.4%/19.7%/11.9%  2.09/0.75
+Manchester United v Brighton & Hove Albion  1-2     1-1      11.6%            1.06    35.0%/25.0%/40.0%  1.43/1.54
+Coventry City v Fulham                      0-1     1-1      12.8%            1.04    35.2%/26.9%/37.9%  1.29/1.34
 ...
-Golden Goal: minute 4 (80% interval 1–13, expected error ±3.88 min) [uniform-hazard-poisson-simulation — baseline]
+expected points: points mode 7.77, jackpot mode 6.96
+Golden Goal: minute 4 (80% interval 1–14, expected error ±3.9 min) [uniform-hazard-poisson-simulation — baseline]
 ```
+
+Where the two modes differ, points mode is backing the more likely *result*: Brighton and
+Fulham are slight favourites, so 1-2 and 0-1 beat 1-1 on expected points even though 1-1
+is the single most likely score.
+
+## First backtest (held out, 2023-24 → November 2026, 7,441 fixtures)
+
+| Model | Exact-score log loss ↓ | Exact hit rate | Points/fixture |
+|---|---:|---:|---:|
+| Market-implied (pre-match odds) | **2.882** | 12.9% | 1.32 |
+| Dixon–Coles (default) | 2.907 | 12.7% | 1.30 |
+| Best simple baseline | 2.969 | 12.1% | 1.21 |
+
+The team-strength model clearly beats the simple baselines, but the betting market is
+better still on probability quality. Combining the two is the next step. Full write-up:
+[`docs/experiments/2026-11-05-phase1-walk-forward.md`](docs/experiments/2026-11-05-phase1-walk-forward.md).
 
 With Docker and PostgreSQL instead: `cp .env.example .env`, set a password, then follow the
 commands at the top of [`docker-compose.yml`](docker-compose.yml).

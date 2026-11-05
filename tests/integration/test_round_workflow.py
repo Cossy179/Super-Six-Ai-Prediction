@@ -12,6 +12,7 @@ from sqlalchemy.exc import DBAPIError
 from super6.features.point_in_time import MatchHistory
 from super6.ingestion.canonicalize import TeamRegistry
 from super6.models import build_model
+from super6.models.base import CutoffAfterKickoffError
 from super6.prediction.round_spec import RoundSpec, resolve_round
 from super6.prediction.service import (
     LockError,
@@ -175,3 +176,6 @@ def test_cutoff_after_deadline_blocks(rules: CompetitionRules,
                         rules, {"n_simulations": 1000})
     assert fc.status is RunStatus.BLOCKED
     assert any(b.startswith("CUTOFF_AFTER_DEADLINE") for b in fc.block_reasons)
+    with pytest.raises(CutoffAfterKickoffError):
+        forecast_round(history, resolved, kickoff, build_model("poisson"), rules,
+                       {"n_simulations": 1000})
