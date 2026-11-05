@@ -177,9 +177,10 @@ def _print_forecast(payload: dict[str, Any]) -> None:
             f"{p['expected_points']:.2f}",
             f"{_pct(o['home'])}/{_pct(o['draw'])}/{_pct(o['away'])}",
             f"{fx['expected_goals']['home']:.2f}/{fx['expected_goals']['away']:.2f}",
+            fx["forecast_basis"],
         ])
     click.echo(_table(["fixture", "points", "jackpot", "P(jackpot pick)", "E[pts]", "H/D/A",
-                       "xG h/a"], rows))
+                       "xG h/a", "basis"], rows))
     m = payload["modes"]
     click.echo(f"\nexpected points: points mode {m['points']['expected_points']:.2f}, "
                f"jackpot mode {m['jackpot']['expected_points']:.2f}")
@@ -191,6 +192,11 @@ def _print_forecast(payload: dict[str, Any]) -> None:
         click.echo(f"Golden Goal: minute {gg['minute']} (80% interval {lo}–{hi}, expected "
                    f"error ±{gg['expected_absolute_error_minutes']} min) [{gg['method']} — "
                    "baseline, no goal-timing data]")
+    no_odds = [f for f in payload["fixtures"] if f["forecast_basis"] == "results model"]
+    if no_odds and payload["model_version"].startswith("ensemble@"):
+        click.secho(f"\n{len(no_odds)} fixture(s) had no pre-deadline odds and use the results "
+                    "model only, which backtests worse. Run `super6 data upcoming` once the "
+                    "provider lists the fixtures, or add `odds:` to the round file.", fg="yellow")
     if payload["warnings"]:
         click.echo("\nwarnings:\n  " + "\n  ".join(payload["warnings"]))
     if payload["block_reasons"]:
@@ -358,7 +364,7 @@ def settle(round_id: str, allow_missing: bool) -> None:
 @click.option("--start", required=True, help="Test window start date (UTC), e.g. 2023-07-01")
 @click.option("--end", required=True, help="Test window end date (exclusive)")
 @click.option("--models", default=",".join(sorted(MODEL_CLASSES)), show_default=True)
-@click.option("--reference", default="dixon_coles", show_default=True)
+@click.option("--reference", default="ensemble", show_default=True)
 @click.option("--competitions", default="E0,E1,E2,E3,SC0", show_default=True,
               help="Fixtures to forecast (training always uses all ingested competitions)")
 @click.option("--refit-every-days", type=float, default=None)

@@ -1,7 +1,9 @@
 # Default model and pipeline settings. Changing a value here changes predictions, so the
 # whole resolved config is stored with every prediction run.
 schema_version: 1
-default_model: dixon_coles
+# Promoted from dixon_coles by experiment 002's predeclared rule
+# (docs/experiments/2026-11-05-ensemble-market-first.md).
+default_model: ensemble
 
 score_grid:
   # Grid grows until the probability mass outside it is below this tolerance.
@@ -36,6 +38,14 @@ models:
     max_goals: 10
   market_poisson:
     devig: proportional
+  ensemble:
+    team_model: dixon_coles
+    # Fitted on the 2022-23 VALIDATION season (scripts/fit_ensemble_weight.py; see
+    # docs/experiments/2026-11-05-ensemble-weight-2022-23.txt). Log loss fell steadily as
+    # the market weight rose and was best at 1.0, for both an arithmetic mixture and a
+    # log-rate blend. In effect: market when pre-cutoff odds exist, team model otherwise.
+    market_weight: 1.0
+    fitted_on: "2022-07-01/2023-07-01"
 
 golden_goal:
   method: uniform_hazard_simulation

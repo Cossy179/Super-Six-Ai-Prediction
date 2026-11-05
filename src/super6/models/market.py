@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 import numpy as np
+import pandas as pd
 from numpy.typing import NDArray
 from scipy.optimize import least_squares
 from scipy.stats import poisson
@@ -25,6 +26,7 @@ from super6.models.base import FittedScoreModel, GridSettings, Prediction, Score
 from super6.models.baselines import _FittedLeagueAverage
 
 _K = np.arange(16)
+STALE_ODDS_DAYS = 4.0  # weekend odds are normally collected the Friday before
 
 
 def devig(odds: MarketOdds) -> tuple[tuple[float, float, float], float | None]:
@@ -79,6 +81,8 @@ class _FittedMarket(FittedScoreModel):
                               fb.lam_away, (*fb.warnings, "MARKET_ODDS_UNAVAILABLE_FALLBACK"),
                               {"fallback": self.fallback.name})
         lam_h, lam_a, rmse = implied_rates(odds)
+        age_days = (view.cutoff - pd.Timestamp(odds.available_at)).total_seconds() / 86400
+        warnings = (f"MARKET_ODDS_STALE:{age_days:.0f}d",) if age_days > STALE_ODDS_DAYS else ()
         details = {
             "odds_available_at": odds.available_at.isoformat(),
             "odds_source": odds.source,
@@ -88,7 +92,7 @@ class _FittedMarket(FittedScoreModel):
             "assumption": "independent Poisson fitted to de-vigged market probabilities",
         }
         return Prediction(fixture.fixture_id, self.name, self.grid.poisson(lam_h, lam_a),
-                          lam_h, lam_a, (), details)
+                          lam_h, lam_a, warnings, details)
 
 
 class MarketImpliedPoisson(ScoreModel):

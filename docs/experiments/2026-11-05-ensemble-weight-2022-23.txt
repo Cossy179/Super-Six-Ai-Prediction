@@ -1,0 +1,26 @@
+ market_weight  exact_log_loss  log_rate_blend_log_loss
+        0.0000          2.8629                   2.8628
+        0.1000          2.8573                   2.8577
+        0.2000          2.8524                   2.8531
+        0.3000          2.8481                   2.8489
+        0.4000          2.8445                   2.8452
+        0.5000          2.8413                   2.8419
+        0.6000          2.8386                   2.8392
+        0.7000          2.8364                   2.8368
+        0.8000          2.8347                   2.8350
+        0.9000          2.8335                   2.8336
+        1.0000          2.8327                   2.8327
+{
+  "window": [
+    "2022-07-01",
+    "2023-07-01"
+  ],
+  "fixtures_used": 2224,
+  "fixtures_without_odds": 40,
+  "best_market_weight": 1.0,
+  "log_loss_team_only": 2.862944665191771,
+  "log_loss_market_only": 2.832720698352503,
+  "log_loss_best": 2.832720698352503,
+  "log_rate_blend_best_weight": 1.0,
+  "log_rate_blend_best_log_loss": 2.832720698352503
+}
