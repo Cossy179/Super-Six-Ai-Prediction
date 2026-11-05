@@ -1,0 +1,1 @@
+"""golden goal package."""

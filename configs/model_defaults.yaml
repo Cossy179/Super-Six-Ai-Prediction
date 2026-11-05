@@ -1,0 +1,58 @@
+# Default model and pipeline settings. Changing a value here changes predictions, so the
+# whole resolved config is stored with every prediction run.
+schema_version: 1
+default_model: dixon_coles
+
+score_grid:
+  # Grid grows until the probability mass outside it is below this tolerance.
+  tail_tolerance: 1.0e-6
+  min_goals: 10
+  max_goals: 30
+
+models:
+  dixon_coles:
+    # Exponential time decay: weight = exp(-xi * age_in_days). 0.0019 ≈ one-year half-life,
+    # in line with the per-half-week value reported by Dixon & Coles (1997).
+    xi_per_day: 0.0019
+    max_history_days: 1095
+    # L2 shrinkage of team attack/defence towards zero (helps low-data and promoted teams).
+    # Chosen on the 2022-23 VALIDATION season only (xi in {0.001, 0.0019, 0.003} x ridge in
+    # {0.5, 2, 8}; scripts/tune_validation.py). Test seasons from 2023-24 were not used.
+    ridge: 0.5
+    rho_bounds: [-0.2, 0.1]
+  poisson:
+    xi_per_day: 0.0019
+    max_history_days: 1095
+    ridge: 0.5
+  rolling_goals:
+    window: 10
+    prior_matches: 3
+    max_history_days: 400
+  league_average:
+    max_history_days: 730
+  empirical_score:
+    max_history_days: 730
+    pseudo_count: 0.5
+    max_goals: 10
+  market_poisson:
+    devig: proportional
+
+golden_goal:
+  method: uniform_hazard_simulation
+  n_simulations: 50000
+  seed: 20261105
+  first_half_stoppage_minutes: 2.0
+  second_half_stoppage_minutes: 5.0
+  half_time_break_minutes: 15.0
+
+backtest:
+  refit_every_days: 1
+  synthetic_rounds:
+    competitions: [E0, E1]
+    weekday: 5          # Saturday
+    local_kickoff: "15:00"
+    fixtures_per_round: 6
+    seed: 6
+  bootstrap:
+    resamples: 2000
+    seed: 7
