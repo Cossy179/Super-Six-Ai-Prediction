@@ -24,6 +24,7 @@ from super6.domain import FixtureSpec, MarketOdds
 from super6.features.point_in_time import PointInTimeView
 from super6.models.base import FittedScoreModel, GridSettings, Prediction, ScoreModel
 from super6.models.baselines import _FittedLeagueAverage
+from super6.prediction.score_grid import dixon_coles_distribution, dixon_coles_tau, feasible_rho
 
 _K = np.arange(16)
 STALE_ODDS_DAYS = 4.0  # weekend odds are normally collected the Friday before
@@ -67,6 +68,52 @@ def implied_rates(odds: MarketOdds) -> tuple[float, float, float]:
     return float(np.exp(sol.x[0])), float(np.exp(sol.x[1])), rmse
 
 
+RHO_BOUNDS = (-0.3, 0.2)
+
+
+def _dc_probs(lam_h: float, lam_a: float, rho: float) -> NDArray[np.float64]:
+    grid = np.outer(poisson.pmf(_K, lam_h), poisson.pmf(_K, lam_a))
+    r = feasible_rho(lam_h, lam_a, rho)
+    t00, t01, t10, t11 = dixon_coles_tau(lam_h, lam_a, r)
+    grid[0, 0] *= t00
+    grid[0, 1] *= t01
+    grid[1, 0] *= t10
+    grid[1, 1] *= t11
+    total = _K[:, None] + _K[None, :]
+    probs: NDArray[np.float64] = np.array([
+        np.tril(grid, -1).sum(), np.trace(grid), np.triu(grid, 1).sum(),
+        1.0 - grid[total <= 2].sum()], dtype=np.float64)
+    return probs
+
+
+def implied_dc(odds: MarketOdds) -> tuple[float, float, float, float]:
+    """Solve (λ_home, λ_away, ρ) so a Dixon–Coles grid matches the market.
+
+    With home/draw/away and over/under 2.5 quoted, three parameters are fitted to four
+    probabilities. The extra ρ lets the grid match the draw price, which two Poisson
+    rates alone systematically miss. Without over/under odds, ρ is fixed at 0 because
+    it would be unidentified.
+    """
+    (p_h, p_d, p_a), p_over = devig(odds)
+    if p_over is None:
+        lam_h, lam_a, rmse = implied_rates(odds)
+        return lam_h, lam_a, 0.0, rmse
+    target = np.array([p_h, p_d, p_a, p_over])
+
+    def residual(x: NDArray[np.float64]) -> NDArray[np.float64]:
+        diff: NDArray[np.float64] = _dc_probs(float(np.exp(x[0])), float(np.exp(x[1])),
+                                              float(x[2])) - target
+        return diff
+
+    lo = [np.log(0.05), np.log(0.05), RHO_BOUNDS[0]]
+    hi = [np.log(8.0), np.log(8.0), RHO_BOUNDS[1]]
+    sol = least_squares(residual, x0=[np.log(1.4), np.log(1.1), 0.0], bounds=(lo, hi),
+                        xtol=1e-12, ftol=1e-12)
+    lam_h, lam_a = float(np.exp(sol.x[0])), float(np.exp(sol.x[1]))
+    rho = feasible_rho(lam_h, lam_a, float(sol.x[2]))
+    return lam_h, lam_a, rho, float(np.sqrt(np.mean(sol.fun**2)))
+
+
 class _FittedMarket(FittedScoreModel):
     def __init__(self, name: str, config: dict[str, Any], view: PointInTimeView,
                  grid: GridSettings, fallback: _FittedLeagueAverage) -> None:
@@ -80,7 +127,15 @@ class _FittedMarket(FittedScoreModel):
             return Prediction(fixture.fixture_id, self.name, fb.distribution, fb.lam_home,
                               fb.lam_away, (*fb.warnings, "MARKET_ODDS_UNAVAILABLE_FALLBACK"),
                               {"fallback": self.fallback.name})
-        lam_h, lam_a, rmse = implied_rates(odds)
+        rho = 0.0
+        if self.config.get("shape", "poisson") == "dixon_coles":
+            lam_h, lam_a, rho, rmse = implied_dc(odds)
+            dist, rho = dixon_coles_distribution(
+                lam_h, lam_a, rho, tail_tolerance=self.grid.tail_tolerance,
+                min_goals=self.grid.min_goals, max_goals=self.grid.max_goals)
+        else:
+            lam_h, lam_a, rmse = implied_rates(odds)
+            dist = self.grid.poisson(lam_h, lam_a)
         age_days = (view.cutoff - pd.Timestamp(odds.available_at)).total_seconds() / 86400
         warnings = (f"MARKET_ODDS_STALE:{age_days:.0f}d",) if age_days > STALE_ODDS_DAYS else ()
         details = {
@@ -89,21 +144,26 @@ class _FittedMarket(FittedScoreModel):
             "odds_type": odds.odds_type,
             "fit_rmse": rmse,
             "used_over_under": odds.over25 is not None,
-            "assumption": "independent Poisson fitted to de-vigged market probabilities",
+            "rho": rho,
+            "assumption": ("Dixon–Coles grid fitted to de-vigged market probabilities"
+                           if self.config.get("shape") == "dixon_coles" else
+                           "independent Poisson fitted to de-vigged market probabilities"),
         }
-        return Prediction(fixture.fixture_id, self.name, self.grid.poisson(lam_h, lam_a),
-                          lam_h, lam_a, warnings, details)
+        return Prediction(fixture.fixture_id, self.name, dist, lam_h, lam_a, warnings, details)
 
 
 class MarketImpliedPoisson(ScoreModel):
     name: ClassVar[str] = "market_poisson"
     description: ClassVar[str] = "Poisson rates implied by de-vigged pre-cutoff market odds"
 
+    shape: ClassVar[str] = "poisson"
+
     def __init__(self, grid: GridSettings | None = None, *, devig: str = "proportional",
                  fallback_history_days: float = 730) -> None:
         if devig != "proportional":
             raise ValueError("only proportional de-vigging is implemented")
-        super().__init__(grid, devig=devig, fallback_history_days=fallback_history_days)
+        super().__init__(grid, devig=devig, fallback_history_days=fallback_history_days,
+                         shape=self.shape)
 
     def fit(self, view: PointInTimeView) -> FittedScoreModel:
         fallback = _FittedLeagueAverage(
@@ -111,3 +171,11 @@ class MarketImpliedPoisson(ScoreModel):
             view, self.grid,
         )
         return _FittedMarket(self.name, self.config, view, self.grid, fallback)
+
+
+class MarketImpliedDC(MarketImpliedPoisson):
+    name: ClassVar[str] = "market_dc"
+    description: ClassVar[str] = (
+        "Dixon–Coles grid (λ_home, λ_away, ρ) fitted to de-vigged pre-cutoff market odds"
+    )
+    shape: ClassVar[str] = "dixon_coles"

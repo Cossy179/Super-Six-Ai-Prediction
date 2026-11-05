@@ -38,6 +38,8 @@ models:
     max_goals: 10
   market_poisson:
     devig: proportional
+  market_dc:
+    devig: proportional
   catboost:
     # Not tuned: library-typical settings declared before experiment 003.
     families: [elo, goals, shots, xg, schedule, tier]

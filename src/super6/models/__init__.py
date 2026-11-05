@@ -20,7 +20,7 @@ from super6.models.calibration import (
 from super6.models.catboost_model import CatBoostGoalModel, CatBoostMarketModel
 from super6.models.dixon_coles import DixonColesModel
 from super6.models.ensemble import EnsembleModel
-from super6.models.market import MarketImpliedPoisson
+from super6.models.market import MarketImpliedDC, MarketImpliedPoisson
 from super6.models.poisson import PoissonModel
 
 MODEL_CLASSES: dict[str, type[ScoreModel]] = {
@@ -32,6 +32,7 @@ MODEL_CLASSES: dict[str, type[ScoreModel]] = {
         LeagueAverageBaseline,
         EmpiricalScoreBaseline,
         MarketImpliedPoisson,
+        MarketImpliedDC,
         EnsembleModel,
         CatBoostGoalModel,
         CatBoostMarketModel,
@@ -73,7 +74,8 @@ def build_model(
         # Components use their own documented defaults unless explicitly overridden.
         team = params.get("team_model", "dixon_coles")
         params.setdefault("team_params", dict(models_cfg.get(team, {})))
-        params.setdefault("market_params", dict(models_cfg.get(MarketImpliedPoisson.name, {})))
+        market = params.get("market_model", MarketImpliedPoisson.name)
+        params.setdefault("market_params", dict(models_cfg.get(market, {})))
     if "families" in params:
         params["families"] = tuple(params["families"])
     if "rho_bounds" in params:

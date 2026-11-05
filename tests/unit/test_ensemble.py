@@ -36,6 +36,8 @@ def test_mixture_matches_components(weight: float,
         market.distribution.grid
     if weight == 0.0:
         assert np.array_equal(ens.distribution.grid, team.distribution.grid)
+    elif weight == 1.0:
+        assert np.array_equal(ens.distribution.grid, market.distribution.grid)
     else:
         assert np.allclose(ens.distribution.grid, expected, atol=1e-15)
     assert ens.lam_home == pytest.approx((1 - weight) * team.lam_home + weight * market.lam_home)
