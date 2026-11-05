@@ -1,0 +1,21 @@
+# EXAMPLE ONLY: these six pairings are invented to demonstrate the file format.
+# They are NOT the official Super 6 round. Before a real prediction, copy this file and
+# enter the official fixtures, kick-off times and deadline from https://super6.skysports.com/
+# (`super6 data upcoming` lists fixtures the data provider has published so far).
+#
+# All times are UTC (UK clocks are on GMT = UTC from late October to late March).
+round_id: example-2026-11-07
+illustrative: true
+source_note: "Invented fixtures for documentation; not an official Super 6 round"
+deadline_utc: "2026-11-07T15:00:00Z"
+rules_version: "public-summary-2026-11-05"   # must match configs/competition_rules.yaml
+fixtures:
+  - {home: Arsenal, away: Newcastle United, competition: E0, kickoff_utc: "2026-11-07T15:00:00Z"}
+  - {home: Manchester United, away: Brighton, competition: E0, kickoff_utc: "2026-11-07T15:00:00Z"}
+  - {home: Leeds United, away: Everton, competition: E0, kickoff_utc: "2026-11-07T15:00:00Z"}
+  - {home: Coventry City, away: Fulham, competition: E0, kickoff_utc: "2026-11-07T15:00:00Z"}
+  - {home: Wrexham, away: West Ham United, competition: E1, kickoff_utc: "2026-11-07T15:00:00Z"}
+  - {home: Southampton, away: Norwich City, competition: E1, kickoff_utc: "2026-11-07T15:00:00Z"}
+  # Optional per-fixture pre-deadline odds (decimal), used only by the market model:
+  #   odds: {home: 1.8, draw: 3.7, away: 4.6, over25: 1.85, under25: 1.95,
+  #          available_at: "2026-11-06T18:00:00Z", source: manual}

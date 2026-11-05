@@ -1,0 +1,40 @@
+# Data-source registry (DESIGN.md §8.1). Every adapter must have an entry here before it
+# is used. Review each provider's terms before production use; public readability does
+# not by itself grant a right to bulk download or redistribute.
+sources:
+  football_data_couk:
+    name: Football-Data.co.uk
+    homepage: https://www.football-data.co.uk/
+    base_url: https://www.football-data.co.uk
+    season_path: /mmz4281/{season}/{code}.csv
+    upcoming_path: /fixtures.csv
+    licence_id: football-data-couk-terms
+    licence_status: review_required
+    attribution: "Historical results and odds courtesy of Football-Data.co.uk"
+    redistribution: not_assumed      # raw files stay in data/ (gitignored)
+    rate_limit_seconds: 1.5          # be polite between file downloads
+    timezone: Europe/London          # kick-off times are UK local time
+    timing_assumptions:
+      # A result is treated as public this long after kick-off.
+      result_published_after_kickoff_minutes: 135
+      # When the kick-off time is missing (older seasons), the result is treated as
+      # public only at the end of the match day (local time).
+      # Pre-match odds: the provider's notes say they are collected on Friday afternoons
+      # for weekend games and Tuesday afternoons for midweek games. We record them as
+      # available at 18:00 UK time on that collection day, or one hour before kick-off
+      # when that is earlier. Closing odds are only available at kick-off.
+      prematch_odds_collection_hour_local: 18
+    fields_used:
+      - Div, Date, Time, HomeTeam, AwayTeam, FTHG, FTAG, FTR
+      - "AvgH/AvgD/AvgA (BbAvH/BbAvD/BbAvA, B365H/B365D/B365A as fallbacks)"
+      - "Avg>2.5/Avg<2.5 (BbAv>2.5/BbAv<2.5 as fallbacks)"
+      - "AvgCH/AvgCD/AvgCA closing odds (stored, never used before kick-off)"
+      - HS, AS, HST, AST, HxG, AxG (stored for later ablations)
+
+  manual_round_file:
+    name: Manually verified Super 6 round file
+    licence_id: user-supplied
+    licence_status: user_responsibility
+    notes: >
+      Official Super 6 fixtures and deadlines are entered manually after checking the
+      official site. The tool never scrapes or submits entries to Super 6.

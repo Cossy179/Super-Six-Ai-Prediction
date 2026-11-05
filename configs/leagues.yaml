@@ -1,0 +1,17 @@
+# Competitions the engine knows about. `code` is the football-data.co.uk division code.
+# Competitions in the same `pool` are fitted jointly so that promoted/relegated teams carry
+# their strength across divisions.
+competitions:
+  E0: {name: Premier League, country: England, pool: england, tier: 1}
+  E1: {name: Championship, country: England, pool: england, tier: 2}
+  E2: {name: League One, country: England, pool: england, tier: 3}
+  E3: {name: League Two, country: England, pool: england, tier: 4}
+  EC: {name: National League, country: England, pool: england, tier: 5}
+  SC0: {name: Scottish Premiership, country: Scotland, pool: scotland, tier: 1}
+  SC1: {name: Scottish Championship, country: Scotland, pool: scotland, tier: 2}
+
+# Default ingestion scope. Super 6 rounds are drawn mostly from the English pyramid,
+# occasionally from the Scottish Premiership.
+default_ingest:
+  competitions: [E0, E1, E2, E3, EC, SC0, SC1]
+  first_season: "2016-17"

@@ -1,0 +1,110 @@
+# Canonical team IDs (slugs of the Football-Data.co.uk name), display names, and aliases.
+#
+# Aliases cover (a) provider renames found in the raw data and (b) names people are likely
+# to type in a round file. Each alias must map to exactly one team; conflicts are errors.
+# Reviewed provider renames:
+#   2026-27 E1: one row lists "Sheffield Utd" alongside "Sheffield United".
+#   2026-27 E2: one row lists "Oxford Utd" alongside "Oxford".
+teams:
+  # --- Premier League / Championship (2016-17 onwards) -------------------------------
+  arsenal: {name: Arsenal, aliases: [Arsenal FC]}
+  aston-villa: {name: Aston Villa, aliases: [Villa]}
+  barnsley: {name: Barnsley}
+  birmingham: {name: Birmingham City, aliases: [Birmingham City FC]}
+  blackburn: {name: Blackburn Rovers}
+  blackpool: {name: Blackpool}
+  bolton: {name: Bolton Wanderers}
+  bournemouth: {name: AFC Bournemouth}
+  brentford: {name: Brentford}
+  brighton: {name: Brighton & Hove Albion, aliases: [Brighton and Hove Albion, Brighton Hove Albion]}
+  bristol-city: {name: Bristol City}
+  burnley: {name: Burnley}
+  burton: {name: Burton Albion}
+  cardiff: {name: Cardiff City}
+  charlton: {name: Charlton Athletic}
+  chelsea: {name: Chelsea, aliases: [Chelsea FC]}
+  coventry: {name: Coventry City}
+  crystal-palace: {name: Crystal Palace, aliases: [Palace]}
+  derby: {name: Derby County}
+  everton: {name: Everton}
+  fulham: {name: Fulham}
+  huddersfield: {name: Huddersfield Town}
+  hull: {name: Hull City}
+  ipswich: {name: Ipswich Town}
+  leeds: {name: Leeds United, aliases: [Leeds Utd]}
+  leicester: {name: Leicester City}
+  lincoln: {name: Lincoln City}
+  liverpool: {name: Liverpool, aliases: [Liverpool FC]}
+  luton: {name: Luton Town}
+  man-city: {name: Manchester City, aliases: [Man City, Man. City]}
+  man-united: {name: Manchester United, aliases: [Man United, Man Utd, Manchester Utd, Man. United]}
+  middlesbrough: {name: Middlesbrough, aliases: [Boro]}
+  millwall: {name: Millwall}
+  newcastle: {name: Newcastle United, aliases: [Newcastle Utd]}
+  norwich: {name: Norwich City}
+  nottm-forest: {name: Nottingham Forest, aliases: [Nottm Forest, Nott'm Forest, Forest]}
+  oxford: {name: Oxford United, aliases: [Oxford Utd]}
+  peterboro: {name: Peterborough United, aliases: [Peterborough, Peterborough Utd]}
+  plymouth: {name: Plymouth Argyle}
+  portsmouth: {name: Portsmouth}
+  preston: {name: Preston North End, aliases: [PNE]}
+  qpr: {name: Queens Park Rangers}
+  reading: {name: Reading}
+  rotherham: {name: Rotherham United, aliases: [Rotherham Utd]}
+  sheffield-united: {name: Sheffield United, aliases: [Sheffield Utd, Sheff Utd]}
+  sheffield-weds: {name: Sheffield Wednesday, aliases: [Sheff Wed, Sheffield Wed]}
+  southampton: {name: Southampton}
+  stoke: {name: Stoke City}
+  sunderland: {name: Sunderland}
+  swansea: {name: Swansea City}
+  tottenham: {name: Tottenham Hotspur, aliases: [Spurs]}
+  watford: {name: Watford}
+  west-brom: {name: West Bromwich Albion, aliases: [WBA]}
+  west-ham: {name: West Ham United, aliases: [West Ham Utd]}
+  wigan: {name: Wigan Athletic}
+  wolves: {name: Wolverhampton Wanderers, aliases: [Wolverhampton]}
+  wrexham: {name: Wrexham}
+  wycombe: {name: Wycombe Wanderers}
+
+  # --- Selected EFL League One / Two ---------------------------------------------------
+  milton-keynes-dons: {name: MK Dons, aliases: [Milton Keynes Dons]}
+  afc-wimbledon: {name: AFC Wimbledon}
+  bristol-rvs: {name: Bristol Rovers}
+  leyton-orient: {name: Leyton Orient}
+  stockport: {name: Stockport County}
+  bradford: {name: Bradford City}
+  doncaster: {name: Doncaster Rovers}
+  mansfield: {name: Mansfield Town}
+  notts-county: {name: Notts County}
+  cambridge: {name: Cambridge United, aliases: [Cambridge Utd]}
+  exeter: {name: Exeter City}
+  northampton: {name: Northampton Town}
+  salford: {name: Salford City}
+  crawley-town: {name: Crawley Town}
+  fleetwood-town: {name: Fleetwood Town}
+  grimsby: {name: Grimsby Town}
+  colchester: {name: Colchester United}
+  swindon: {name: Swindon Town}
+  tranmere: {name: Tranmere Rovers}
+  accrington: {name: Accrington Stanley}
+  cheltenham: {name: Cheltenham Town}
+  crewe: {name: Crewe Alexandra}
+  shrewsbury: {name: Shrewsbury Town}
+  oldham: {name: Oldham Athletic}
+  harrogate: {name: Harrogate Town}
+
+  # --- Scottish Premiership ------------------------------------------------------------
+  celtic: {name: Celtic}
+  rangers: {name: Rangers}
+  aberdeen: {name: Aberdeen}
+  hearts: {name: Heart of Midlothian}
+  hibernian: {name: Hibernian, aliases: [Hibs]}
+  dundee-united: {name: Dundee United, aliases: [Dundee Utd]}
+  dundee: {name: Dundee}
+  kilmarnock: {name: Kilmarnock}
+  motherwell: {name: Motherwell}
+  st-mirren: {name: St Mirren}
+  st-johnstone: {name: St Johnstone}
+  ross-county: {name: Ross County}
+  livingston: {name: Livingston}
+  falkirk: {name: Falkirk}

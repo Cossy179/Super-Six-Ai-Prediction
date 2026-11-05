@@ -1,0 +1,39 @@
+# Local stack: PostgreSQL + the super6 CLI.
+#   docker compose up -d db
+#   docker compose run --rm super6 db init
+#   docker compose run --rm super6 data download
+#   docker compose run --rm super6 data ingest
+#   docker compose run --rm super6 predict rounds/example-round.yaml
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-super6}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-super6}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-super6}"]
+      interval: 5s
+      retries: 10
+
+  super6:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SUPER6_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-super6}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-super6}
+      SUPER6_DATA_DIR: /app/data
+      SUPER6_REPORTS_DIR: /app/reports
+    volumes:
+      - ./data:/app/data
+      - ./reports:/app/reports
+      - ./rounds:/app/rounds
+      - ./configs:/app/configs:ro
+
+volumes:
+  pgdata:

@@ -1,0 +1,32 @@
+# Versioned Super 6 competition rules (DESIGN.md §3.5).
+#
+# These values are configuration defaults taken from public descriptions of the game.
+# They are NOT verified against the operator's current terms. Before relying on a
+# prediction, check https://super6.skysports.com/ and the linked terms, update the
+# fields below, set `verified: true`, and bump `rules_version`.
+#
+# Unknown keys are rejected: a new rule we do not understand blocks predictions rather
+# than being silently ignored.
+schema_version: 1
+competition: sky_super_6
+rules_version: "public-summary-2026-11-05"
+verified: false
+verified_on: null
+source_urls:
+  - https://super6.skysports.com/
+  - https://www.squawka.com/en/news/sky-bet-super-6-predictions-latest-matches-19-08-26/
+
+fixtures_per_round: 6
+points_exact_score: 5
+points_correct_result_only: 2
+points_incorrect: 0
+
+golden_goal_enabled: true
+golden_goal_minute_indexing: one_based
+golden_goal_tiebreak: closest_minute
+# How a stoppage-time goal is recorded (e.g. 45+2). Unverified assumption:
+# capped_at_period_end records 45+2 as 45 and 90+3 as 90.
+golden_goal_stoppage_time: capped_at_period_end
+
+settlement_period: full_time
+submission_policy: manual_only
