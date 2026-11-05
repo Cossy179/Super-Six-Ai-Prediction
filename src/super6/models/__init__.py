@@ -12,6 +12,7 @@ from super6.models.baselines import (
     LeagueAverageBaseline,
     RollingGoalsPoisson,
 )
+from super6.models.catboost_model import CatBoostGoalModel, CatBoostMarketModel
 from super6.models.dixon_coles import DixonColesModel
 from super6.models.ensemble import EnsembleModel
 from super6.models.market import MarketImpliedPoisson
@@ -27,6 +28,8 @@ MODEL_CLASSES: dict[str, type[ScoreModel]] = {
         EmpiricalScoreBaseline,
         MarketImpliedPoisson,
         EnsembleModel,
+        CatBoostGoalModel,
+        CatBoostMarketModel,
     )
 }
 
@@ -61,6 +64,8 @@ def build_model(
         team = params.get("team_model", "dixon_coles")
         params.setdefault("team_params", dict(models_cfg.get(team, {})))
         params.setdefault("market_params", dict(models_cfg.get(MarketImpliedPoisson.name, {})))
+    if "families" in params:
+        params["families"] = tuple(params["families"])
     if "rho_bounds" in params:
         params["rho_bounds"] = tuple(params["rho_bounds"])
     return MODEL_CLASSES[name](grid_settings(defaults), **params)
