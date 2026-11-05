@@ -44,6 +44,9 @@ def test_first_goal_uses_wall_clock_across_staggered_kickoffs() -> None:
     first = first_goal([early_goal_late_game, late_goal_early_game])
     assert first is late_goal_early_game
     assert first.minute() == 80
+    # Under the match-clock definition the minute-2 goal counts instead.
+    by_clock = first_goal([early_goal_late_game, late_goal_early_game], "earliest_match_minute")
+    assert by_clock is early_goal_late_game and by_clock.minute() == 2
     assert first_goal([]) is None
 
 
@@ -68,6 +71,20 @@ def test_simulation_respects_kickoff_schedule(rules: CompetitionRules) -> None:
     assert fc.first_goal_fixture_share["early"] > 0.85
     # A lone early game has a much later expected first goal than six concurrent games.
     assert fc.minute > 15
+
+
+def test_match_clock_definition_ignores_kickoff_order(rules: CompetitionRules) -> None:
+    early = datetime(2026, 11, 7, 12, 30, tzinfo=UTC)
+    fixtures = [GoldenGoalFixture("early", early, 2.6)] + [
+        GoldenGoalFixture(f"late{i}", KO, 2.6) for i in range(5)]
+    clock = rules.model_copy(update={"golden_goal_first_goal": "earliest_match_minute"})
+    real = simulate_golden_goal(fixtures, rules, n_simulations=20_000, seed=2)
+    by_clock = simulate_golden_goal(fixtures, clock, n_simulations=20_000, seed=2)
+    # With six games competing on the match clock, the lowest minute is much earlier and
+    # the early kick-off no longer dominates.
+    assert by_clock.minute < real.minute
+    assert by_clock.first_goal_fixture_share["early"] < 0.3
+    assert any("earliest_match_minute" in a for a in by_clock.assumptions)
 
 
 def test_simulation_is_deterministic(rules: CompetitionRules) -> None:

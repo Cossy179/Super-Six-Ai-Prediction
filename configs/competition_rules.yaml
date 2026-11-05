@@ -27,6 +27,9 @@ golden_goal_tiebreak: closest_minute
 # How a stoppage-time goal is recorded (e.g. 45+2). Unverified assumption:
 # capped_at_period_end records 45+2 as 45 and 90+3 as 90.
 golden_goal_stoppage_time: capped_at_period_end
+# When kick-offs are staggered, which goal counts as the first. Unverified assumption:
+# first_in_real_time. The alternative is earliest_match_minute (lowest minute in any game).
+golden_goal_first_goal: first_in_real_time
 
 settlement_period: full_time
 submission_policy: manual_only

@@ -91,7 +91,12 @@ def simulate_golden_goal(
         wall[:, j] = np.where(scored, real, np.inf)
         minute[:, j] = _recorded_minutes(np.where(scored, t, 0.0), first_half,
                                          rules.golden_goal_stoppage_time)
-    first_idx = np.argmin(wall, axis=1)
+    if rules.golden_goal_first_goal == "earliest_match_minute":
+        # Lowest recorded minute in any match, regardless of kick-off times.
+        clock = np.where(np.isfinite(wall), minute.astype(float), np.inf)
+        first_idx = np.argmin(clock, axis=1)
+    else:
+        first_idx = np.argmin(wall, axis=1)
     any_goal = np.isfinite(wall[np.arange(n), first_idx])
     p_no_goal = float(1.0 - any_goal.mean())
     if not any_goal.any():
@@ -118,6 +123,7 @@ def simulate_golden_goal(
         f"{half_time_break_minutes:g} minutes.",
         f"Stoppage-time goals recorded as '{rules.golden_goal_stoppage_time}' "
         f"(rules {'verified' if rules.verified else 'UNVERIFIED'}).",
+        f"First goal defined as '{rules.golden_goal_first_goal}'.",
         "Fixtures are independent; delayed kick-offs are not modelled.",
     )
     return GoldenGoalForecast(choice, METHOD, distribution, p_no_goal, eae, lo, hi, n, seed,
