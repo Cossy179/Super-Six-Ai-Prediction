@@ -19,15 +19,17 @@ from typing import Any, ClassVar
 from super6.domain import FixtureSpec
 from super6.features.point_in_time import PointInTimeView
 from super6.models.base import FittedScoreModel, GridSettings, Prediction, ScoreModel
+from super6.models.catboost_model import CatBoostGoalModel
 from super6.models.dixon_coles import DixonColesModel
 from super6.models.market import MarketImpliedPoisson
 from super6.models.poisson import PoissonModel
 from super6.prediction.score_grid import ScoreDistribution
 
 MARKET_FALLBACK = "MARKET_ODDS_UNAVAILABLE_FALLBACK"
-TEAM_MODELS: dict[str, type[PoissonModel]] = {
+TEAM_MODELS: dict[str, type[ScoreModel]] = {
     DixonColesModel.name: DixonColesModel,
     PoissonModel.name: PoissonModel,
+    CatBoostGoalModel.name: CatBoostGoalModel,
 }
 
 
@@ -99,8 +101,9 @@ class EnsembleModel(ScoreModel):
                          team_params=dict(team_params or {}),
                          market_params=dict(market_params or {}), fitted_on=fitted_on)
         params = dict(team_params or {})
-        if "rho_bounds" in params:
-            params["rho_bounds"] = tuple(params["rho_bounds"])
+        for key in ("rho_bounds", "families"):
+            if key in params:
+                params[key] = tuple(params[key])
         self.team = TEAM_MODELS[team_model](self.grid, **params)
         self.market = MarketImpliedPoisson(self.grid, **dict(market_params or {}))
 

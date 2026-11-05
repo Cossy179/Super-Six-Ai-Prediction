@@ -412,6 +412,42 @@ def backtest(start: str, end: str, models: str, reference: str, competitions: st
     click.echo(f"\nwrote {paths['markdown']}")
 
 
+@main.command("replay-rounds")
+@click.argument("round_dir", type=click.Path(exists=True, file_okay=False))
+@click.option("--model", "model_name", default=None, type=click.Choice(sorted(MODEL_CLASSES)))
+@click.option("--allow-illustrative", is_flag=True,
+              help="Also replay files marked illustrative (for demonstrations only)")
+@click.option("--out", "out_path", type=click.Path(dir_okay=False), default=None)
+def replay_rounds_cmd(round_dir: str, model_name: str | None, allow_illustrative: bool,
+                      out_path: str | None) -> None:
+    """Replay verified historical Super 6 rounds at their real deadlines and score them."""
+    from super6.evaluation.rounds import replay_rounds, summarise_rounds
+    from super6.storage.repositories import load_history, load_registry
+
+    rules = load_rules()
+    defaults = load_model_defaults()
+    name = model_name or defaults["default_model"]
+    files = sorted(Path(round_dir).glob("*.yaml"))
+    if not files:
+        raise click.ClickException(f"no round files (*.yaml) in {round_dir}")
+    specs = [load_round(f) for f in files]
+    leagues = set(pipeline.leagues_config()["competitions"])
+    with session_scope(_engine()) as session:
+        history = load_history(session)
+        registry = load_registry(session, TeamRegistry.from_config())
+    frame = replay_rounds(history, specs, registry, rules,
+                          lambda: build_model(name, defaults=defaults), leagues,
+                          defaults.get("golden_goal"), allow_illustrative)
+    cols = [c for c in ("round_id", "kind", "status", "points_points", "points_exact",
+                        "jackpot_points", "jackpot_exact", "golden_goal_minute", "detail")
+            if c in frame.columns]
+    click.echo(_table(cols, frame[cols].fillna("").to_numpy().tolist()))
+    click.echo("\n" + json.dumps(summarise_rounds(frame), indent=2, default=str))
+    if out_path:
+        frame.to_csv(out_path, index=False)
+        click.echo(f"wrote {out_path}")
+
+
 @main.command()
 @click.option("--cutoff", default=None, help="ISO UTC timestamp (default: now)")
 @click.option("--competition", default="E0", show_default=True)

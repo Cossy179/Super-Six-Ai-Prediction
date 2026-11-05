@@ -84,6 +84,9 @@ commands at the top of [`docker-compose.yml`](docker-compose.yml).
 6. **Enter the picks yourself** on the official Super 6 site.
 7. **Settle** after the matches: `super6 data download && super6 data ingest && super6 settle <round-id>`.
 
+To test the model on real past rounds, add verified round files to `rounds/history/` and
+run `super6 replay-rounds rounds/history` (see `docs/OPERATIONS.md`).
+
 Other commands: `super6 runs list`, `super6 runs show <id>`, `super6 ratings --competition E0`,
 `super6 backtest --start 2023-07-01 --end 2026-11-05`, and `super6 --help`.
 
@@ -103,13 +106,20 @@ Other commands: `super6 runs list`, `super6 runs show <id>`, `super6 ratings --c
 
 ## Status
 
-Phase 1 of the [roadmap](DESIGN.md#20-delivery-roadmap) is in place, plus the first
-Phase 2 step (the market-first ensemble). Experiments are written up in
-[`docs/experiments/`](docs/experiments/). Not yet built:
+Phase 1 of the [roadmap](DESIGN.md#20-delivery-roadmap) is in place, and most of Phase 2:
 
-- xG and other enriched features, a CatBoost challenger, and calibration layers
-  (rest of Phase 2). xG columns are already ingested where the provider supplies them
-  (2026-27).
+- the market-first ensemble (the default);
+- point-in-time ML features (Elo, goals, shots, xG, schedule, tier);
+- CatBoost challengers;
+- feature ablations;
+- replay of verified historical rounds.
+
+The CatBoost challengers were tested against rules declared in advance and **not
+adopted**; see [experiment 003](docs/experiments/2026-11-05-catboost-features.md). All
+experiments are in [`docs/experiments/`](docs/experiments/). Not yet built:
+
+- A calibration layer for the ML challenger, and xG evaluation once a full season of xG
+  exists (rest of Phase 2).
 - Licensed goal-timing data, a hazard model for Golden Goal, scheduling and alerting
   (Phase 3).
 - FastAPI service and Next.js dashboard (Phase 4). The JSON written by

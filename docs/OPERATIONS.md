@@ -41,6 +41,20 @@ never in the repository.
 - Locking is refused after the deadline, for a second run in the same round, or for a run
   that is not VALIDATED/PUBLISHED.
 
+## Replaying real Super 6 rounds
+
+Add verified historical rounds as round files with `illustrative: false`, for example in
+`rounds/history/<round-id>.yaml`. Each needs the six fixtures the competition actually
+used and its real deadline. Then run:
+
+```bash
+super6 replay-rounds rounds/history --out reports/history-replay.csv
+```
+
+Each round is forecast one minute before its deadline, scored against ingested results,
+and labelled `historical`. Rounds marked illustrative are skipped unless you pass
+`--allow-illustrative`. Rounds that fail validation are reported as BLOCKED.
+
 ## Backtests and model changes
 
 - Tune only on a validation window (`scripts/tune_validation.py`), then run

@@ -49,6 +49,27 @@ See `src/super6/storage/models.py` for column types. Key tables:
 - `model_registry`, `feature_snapshots`: model config and training-data fingerprints.
 - `evaluations`: per-run points, exact hits, log loss and RPS after settlement.
 
+## Match statistics coverage (Football-Data.co.uk)
+
+| Statistic | Coverage in the ingested data |
+|---|---|
+| Shots, shots on target | E0–E3 and SC0, every season from 2016-17. SC1 from 2017-18. **None for the National League (EC) before 2026-27.** |
+| xG (`HxG`, `AxG`) | **2026-27 only**, for E0–E3 and SC0 |
+
+Missing statistics stay missing (`NaN`). Feature averages carry a count of the matches
+they are based on, so a team promoted from the National League has shot features built
+only from its EFL matches. Because xG has under one season of history, it can't yet be
+trained on or evaluated.
+
+## ML features (`features/team_features.py`)
+
+Features are computed by an event-driven builder. Each result becomes visible at its
+`result_available_at`, and each feature request is answered as of a given time: one minute
+before kick-off for training rows, and the prediction cutoff for live and replayed
+forecasts. Families: `elo`, `goals`, `shots`, `xg`, `schedule`, `tier`. Market inputs,
+for `catboost_market`, are de-vigged pre-match probabilities available before each row's
+own kick-off; closing odds are never used.
+
 ## Known provider quirks (reviewed)
 
 - 2026-27 E1: one row names "Sheffield Utd" while all others use "Sheffield United".

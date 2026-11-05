@@ -33,6 +33,9 @@ MATCH_COLUMNS = [
     "away_goals",
     "result_available_at",
 ]
+# Optional post-match statistics. They describe a finished match, so they become visible
+# exactly when its result does (filtered by result_available_at like everything else).
+STAT_COLUMNS = ["home_shots", "away_shots", "home_sot", "away_sot", "home_xg", "away_xg"]
 ODDS_COLUMNS = [
     "fixture_id",
     "odds_type",
@@ -73,6 +76,11 @@ class MatchHistory:
         if missing:
             raise ValueError(f"odds history missing columns: {missing}")
         m = self.matches.copy()
+        for col in STAT_COLUMNS:
+            m[col] = pd.to_numeric(m[col], errors="coerce") if col in m.columns else np.nan
+        if "neutral" not in m.columns:
+            m["neutral"] = False
+        m["neutral"] = m["neutral"].fillna(False).astype(bool)
         for col in ("kickoff_utc", "result_available_at"):
             m[col] = pd.to_datetime(m[col], utc=True)
         m["kickoff_time_known"] = m["kickoff_time_known"].astype(bool)
@@ -98,7 +106,7 @@ class MatchHistory:
     ) -> MatchHistory:
         """A new history with extra rows appended (used by tests and round overrides)."""
         new_matches = self.matches if matches is None else pd.concat(
-            [self.matches, matches[MATCH_COLUMNS]], ignore_index=True
+            [self.matches, matches.reindex(columns=self.matches.columns)], ignore_index=True
         )
         new_odds = self.odds if odds is None or odds.empty else pd.concat(
             [self.odds, odds[ODDS_COLUMNS]], ignore_index=True
@@ -136,12 +144,26 @@ class PointInTimeView:
     def n_results(self) -> int:
         return len(self._results)
 
-    def latest_odds(self, fixture_id: str) -> MarketOdds | None:
+    def latest_odds(self, fixture_id: str, odds_type: str | None = None) -> MarketOdds | None:
         """Most recent odds snapshot for ``fixture_id`` available at the cutoff."""
+        return self.odds_as_of(fixture_id, self.cutoff, odds_type)
+
+    def odds_as_of(self, fixture_id: str, as_of: pd.Timestamp | datetime,
+                   odds_type: str | None = None) -> MarketOdds | None:
+        """Most recent snapshot available at ``as_of`` (which may not exceed the cutoff).
+
+        Used to rebuild what a historical training row knew before its own kick-off.
+        """
+        as_of_ts = to_timestamp(as_of)
+        if as_of_ts > self.cutoff:
+            raise LeakageError(f"odds requested as of {as_of_ts}, after the cutoff {self.cutoff}")
         group = self._history.odds_for(fixture_id)
         if group is None:
             return None
-        usable = group.loc[group["available_at"] <= self.cutoff]
+        mask = group["available_at"] <= as_of_ts
+        if odds_type is not None:
+            mask &= group["odds_type"] == odds_type
+        usable = group.loc[mask]
         if usable.empty:
             return None
         row = usable.iloc[-1]

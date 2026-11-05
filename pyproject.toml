@@ -19,6 +19,7 @@ dependencies = [
     "alembic>=1.13",
     "click>=8.1",
     "httpx>=0.27",
+    "catboost>=1.2",
 ]
 
 [project.optional-dependencies]
@@ -70,5 +71,5 @@ warn_unused_ignores = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["scipy.*"]
+module = ["scipy.*", "catboost.*"]
 ignore_missing_imports = true

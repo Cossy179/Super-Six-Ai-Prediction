@@ -14,7 +14,12 @@ from sqlalchemy import insert, select
 from sqlalchemy.orm import Session
 
 from super6.domain import FixtureStatus
-from super6.features.point_in_time import MATCH_COLUMNS, ODDS_COLUMNS, MatchHistory
+from super6.features.point_in_time import (
+    MATCH_COLUMNS,
+    ODDS_COLUMNS,
+    STAT_COLUMNS,
+    MatchHistory,
+)
 from super6.ingestion.adapters.football_data_couk import ParsedFile, RawFile
 from super6.ingestion.canonicalize import TeamRegistry, normalise_name
 from super6.storage.models import (
@@ -231,6 +236,15 @@ def load_history(session: Session, competitions: Iterable[str] | None = None) ->
     rows = session.execute(stmt).all()
     matches = pd.DataFrame(rows, columns=MATCH_COLUMNS)
     matches = matches.drop_duplicates("fixture_id", keep="first")
+    sstmt = select(FixtureStat.fixture_id, FixtureStat.home_shots, FixtureStat.away_shots,
+                   FixtureStat.home_shots_on_target, FixtureStat.away_shots_on_target,
+                   FixtureStat.home_xg, FixtureStat.away_xg).order_by(FixtureStat.id)
+    stats = pd.DataFrame(session.execute(sstmt).all(), columns=["fixture_id", *STAT_COLUMNS])
+    stats = stats.drop_duplicates("fixture_id", keep="first")
+    matches = matches.merge(stats, on="fixture_id", how="left")
+    if "neutral" not in matches.columns:
+        neutral = dict(session.execute(select(Fixture.id, Fixture.neutral)).all())
+        matches["neutral"] = matches["fixture_id"].map(neutral).fillna(False)
     # A FINISHED status without a stored result is not usable as a result.
     no_result = matches["home_goals"].isna() & (matches["status"] == FixtureStatus.FINISHED)
     matches.loc[no_result, "status"] = FixtureStatus.SCHEDULED.value
