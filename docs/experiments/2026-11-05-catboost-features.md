@@ -69,3 +69,72 @@ python scripts/run_experiment.py --start 2023-07-01 --end 2026-11-05 --reference
   --model ensemble=ensemble --model dixon_coles=dixon_coles --model catboost=catboost \
   --model catboost_market=catboost_market
 ```
+
+## Results (added after both runs)
+
+Both runs used code `68730ba`, the commit that recorded this protocol. Generated output:
+[fresh](2026-11-05-catboost-fresh-generated-report.md),
+[reused](2026-11-05-catboost-reused-generated-report.md). Pairwise intervals not shown in
+those reports come from `scripts/compare_pairs.py`, which uses the same block bootstrap.
+
+### Fresh window, 2019-07 → 2022-07 (6,479 fixtures)
+
+| Model | Exact-score log loss ↓ | RPS ↓ | Points/fixture (points mode) |
+|---|---:|---:|---:|
+| `ensemble` (champion) | **2.8368** | **0.2102** | **1.341** |
+| `catboost_market` | 2.8518 | 0.2123 | 1.296 |
+| `dixon_coles` | 2.8656 | 0.2149 | 1.286 |
+| `catboost` | 2.8673 | 0.2160 | 1.283 |
+| `catboost_no_shots` | 2.8735 | 0.2170 | 1.270 |
+| `catboost_elo_goals` | 2.8748 | 0.2171 | 1.266 |
+
+The ensemble ranks first on log loss in each of the three seasons.
+
+### Reused window, 2023-07 → 2026-11 (7,441 fixtures)
+
+| Model | Exact-score log loss ↓ | Points/fixture (points mode) |
+|---|---:|---:|
+| `ensemble` | **2.8810** | **1.326** |
+| `catboost_market` | 2.9071 | 1.314 |
+| `dixon_coles` | 2.9071 | 1.299 |
+| `catboost` | 2.9216 | 1.295 |
+
+### Decisions against the predeclared rules
+
+| Rule | Evidence (A minus B, 95% interval) | Outcome |
+|---|---|---|
+| R1: `catboost_market` replaces `ensemble` | Fresh log loss +0.0149 [+0.0100, +0.0200]; points −0.044 [−0.069, −0.021] | **Fails.** `ensemble` stays the default |
+| R2: `catboost` replaces `dixon_coles` as fallback | Fresh log loss +0.0017 [−0.0056, +0.0089]; reused +0.0144 [+0.0050, +0.0248] | **Fails.** Dixon–Coles stays the fallback |
+| R3: shots stay in CatBoost features | `catboost` − `catboost_no_shots`, fresh log loss −0.0062 [−0.0118, −0.0004] | **Passes**, narrowly |
+
+No configuration changes follow from this experiment, because neither challenger was
+promoted.
+
+### What we learned
+
+1. **The market is still the hardest benchmark.** Giving CatBoost the market
+   probabilities *plus* team features did worse than using the market directly. The
+   learned model adds noise faster than it adds information.
+2. **CatBoost is overconfident.** Its expected points exceed realised points by
+   0.034–0.049 per fixture. For comparison, Dixon–Coles's gap is 0.023 (fresh) and 0.003
+   (reused), and the ensemble's is −0.020 and −0.006. CatBoost's goal rates are too
+   extreme, which is a calibration problem, not a lack of signal.
+3. **Shots on target carry real signal, but only a little.** They are the only feature
+   family that measurably helped. Schedule and tier features made no detectable
+   difference (`catboost_no_shots` vs `catboost_elo_goals`: −0.0013 [−0.0045, +0.0019]).
+4. **xG remains untested.** There is less than one season of history in this source.
+
+### Exploratory, not predeclared, so weak evidence
+
+CatBoost models scored more points than Dixon–Coles in *jackpot* mode on the fresh window
+(`catboost` +0.068 [+0.031, +0.106] points/fixture). This was one of many comparisons, and
+jackpot mode is not the default, so treat it as a lead to re-test, not a result.
+
+## Next steps suggested by this experiment
+
+- Calibrate the challenger before testing it again, for example by shrinking predicted
+  log-rates towards the competition mean, with the shrinkage fitted on a validation
+  season. Then re-test under a new predeclared rule.
+- Revisit xG once a full season (2026-27) is available.
+- New information sources (line-ups, injuries) are the realistic route to beating the
+  market. A results-based model can't add much to it.

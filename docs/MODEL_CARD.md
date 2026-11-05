@@ -19,6 +19,12 @@ below, flagged `ENSEMBLE_TEAM_MODEL_ONLY` and shown as `basis: results model`.
 - **Dependency:** the advantage exists only when pre-deadline odds are available. Run
   `super6 data upcoming` before predicting, or enter odds in the round file.
 
+**Challengers tested and not adopted** ([experiment 003](experiments/2026-11-05-catboost-features.md)):
+CatBoost goal-rate models with and without market inputs. Both lost to the ensemble on a
+fresh 2019–22 window and on 2023–26. Results-only CatBoost was no better than
+Dixon–Coles, and both CatBoost models were overconfident. They stay available via
+`--model catboost` and `--model catboost_market` for research.
+
 The rest of this card describes the results-based team-strength models, which are used
 for fixtures without odds and as the baseline the ensemble must beat.
 
