@@ -36,7 +36,9 @@ class GoldenGoalFixture:
 class GoldenGoalForecast:
     minute: int
     method: str
-    distribution: dict[int, float]  # recorded minute -> P(minute | at least one goal)
+    # recorded minute -> probability. Includes the rules' no-goal answer (e.g. 0) when the
+    # rules define one; otherwise conditional on at least one goal.
+    distribution: dict[int, float]
     p_no_goal: float
     expected_abs_error: float
     interval_low: int  # 10th percentile
@@ -99,9 +101,16 @@ def simulate_golden_goal(
         first_idx = np.argmin(wall, axis=1)
     any_goal = np.isfinite(wall[np.arange(n), first_idx])
     p_no_goal = float(1.0 - any_goal.mean())
-    if not any_goal.any():
+    if not any_goal.any() and rules.golden_goal_no_goal_minute is None:
         raise ValueError("no simulated goals; check expected goals inputs")
     first_minutes = minute[np.arange(n), first_idx][any_goal]
+    if rules.golden_goal_no_goal_minute is not None:
+        # The rules define the answer for a goalless round, so it is part of the outcome
+        # distribution the recommendation is optimised over.
+        first_minutes = np.concatenate([
+            first_minutes,
+            np.full(int((~any_goal).sum()), rules.golden_goal_no_goal_minute, dtype=np.int64),
+        ])
     values, counts = np.unique(first_minutes, return_counts=True)
     probs = counts / counts.sum()
     distribution = {int(v): float(p) for v, p in zip(values, probs, strict=True)}

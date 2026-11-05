@@ -60,14 +60,27 @@ def test_simulation_median_and_no_goal(rules: CompetitionRules) -> None:
     assert fc.p_no_goal < 1e-4
     assert fc.interval_low <= fc.minute <= fc.interval_high
     assert set(fc.first_goal_fixture_share) == {f"f{i}" for i in range(6)}
-    assert any("UNVERIFIED" in a for a in fc.assumptions)
+    assert any("verified" in a for a in fc.assumptions)
+
+
+def test_goalless_round_counts_as_minute_zero(rules: CompetitionRules) -> None:
+    # Two near-goalless fixtures: most simulated rounds have no goal, so the rules'
+    # answer of 0 becomes the best pick.
+    fixtures = [GoldenGoalFixture(f"f{i}", KO, 0.2) for i in range(2)]
+    fc = simulate_golden_goal(fixtures, rules, n_simulations=20_000, seed=4)
+    assert fc.p_no_goal > 0.6
+    assert fc.minute == 0 and fc.distribution[0] == pytest.approx(fc.p_no_goal)
+    undefined = rules.model_copy(update={"golden_goal_no_goal_minute": None})
+    fc2 = simulate_golden_goal(fixtures, undefined, n_simulations=20_000, seed=4)
+    assert 0 not in fc2.distribution and fc2.minute > 0
 
 
 def test_simulation_respects_kickoff_schedule(rules: CompetitionRules) -> None:
     early = datetime(2026, 11, 7, 12, 30, tzinfo=UTC)
     fixtures = [GoldenGoalFixture("early", early, 2.6)] + [
         GoldenGoalFixture(f"late{i}", KO, 2.6) for i in range(5)]
-    fc = simulate_golden_goal(fixtures, rules, n_simulations=20_000, seed=2)
+    real = rules.model_copy(update={"golden_goal_first_goal": "first_in_real_time"})
+    fc = simulate_golden_goal(fixtures, real, n_simulations=20_000, seed=2)
     assert fc.first_goal_fixture_share["early"] > 0.85
     # A lone early game has a much later expected first goal than six concurrent games.
     assert fc.minute > 15
@@ -78,7 +91,9 @@ def test_match_clock_definition_ignores_kickoff_order(rules: CompetitionRules) -
     fixtures = [GoldenGoalFixture("early", early, 2.6)] + [
         GoldenGoalFixture(f"late{i}", KO, 2.6) for i in range(5)]
     clock = rules.model_copy(update={"golden_goal_first_goal": "earliest_match_minute"})
-    real = simulate_golden_goal(fixtures, rules, n_simulations=20_000, seed=2)
+    real = simulate_golden_goal(
+        fixtures, rules.model_copy(update={"golden_goal_first_goal": "first_in_real_time"}),
+        n_simulations=20_000, seed=2)
     by_clock = simulate_golden_goal(fixtures, clock, n_simulations=20_000, seed=2)
     # With six games competing on the match clock, the lowest minute is much earlier and
     # the early kick-off no longer dominates.

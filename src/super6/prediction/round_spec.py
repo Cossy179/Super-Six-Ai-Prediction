@@ -120,4 +120,9 @@ def resolve_round(spec: RoundSpec, registry: TeamRegistry, rules: CompetitionRul
             out.block_reasons.append(
                 f"DEADLINE_AFTER_KICKOFF: deadline {spec.deadline_utc} is after the first "
                 f"kick-off {first}")
+        elif spec.deadline_utc < first:
+            # The terms say a round closes at the first kick-off; an earlier deadline is
+            # safe but unusual, so flag a likely typo.
+            out.warnings.append(
+                f"DEADLINE_BEFORE_FIRST_KICKOFF: rounds close at the first kick-off ({first})")
     return out
