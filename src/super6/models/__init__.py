@@ -12,6 +12,11 @@ from super6.models.baselines import (
     LeagueAverageBaseline,
     RollingGoalsPoisson,
 )
+from super6.models.calibration import (
+    CatBoostCalibrated,
+    CatBoostMarketCalibrated,
+    RateCalibratedModel,
+)
 from super6.models.catboost_model import CatBoostGoalModel, CatBoostMarketModel
 from super6.models.dixon_coles import DixonColesModel
 from super6.models.ensemble import EnsembleModel
@@ -30,6 +35,8 @@ MODEL_CLASSES: dict[str, type[ScoreModel]] = {
         EnsembleModel,
         CatBoostGoalModel,
         CatBoostMarketModel,
+        CatBoostCalibrated,
+        CatBoostMarketCalibrated,
     )
 }
 
@@ -59,6 +66,9 @@ def build_model(
     models_cfg = defaults.get("models", {})
     params = dict(models_cfg.get(name, {}))
     params.update(overrides or {})
+    cls = MODEL_CLASSES[name]
+    if issubclass(cls, RateCalibratedModel):
+        params.setdefault("base_params", dict(models_cfg.get(cls.base_class.name, {})))
     if name == EnsembleModel.name:
         # Components use their own documented defaults unless explicitly overridden.
         team = params.get("team_model", "dixon_coles")

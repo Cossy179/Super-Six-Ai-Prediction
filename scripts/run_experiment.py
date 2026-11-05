@@ -21,6 +21,7 @@ import pandas as pd
 from super6.config import Settings, code_version
 from super6.evaluation.replay import synthetic_rounds, walk_forward
 from super6.evaluation.reports import build_report, write_report
+from super6.evaluation.tracking import experiment_record, log_experiment
 from super6.models import build_model, load_model_defaults
 from super6.rules import load_rules
 from super6.storage.db import make_engine, session_scope
@@ -46,6 +47,10 @@ def main() -> None:
     ap.add_argument("--competitions", default="E0,E1,E2,E3,SC0")
     ap.add_argument("--label", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--merge", default=None,
+                    help="predictions.csv.gz from an earlier run whose models are unchanged")
+    ap.add_argument("--merge-models", default="",
+                    help="comma-separated models to take from --merge")
     args = ap.parse_args()
     defaults = load_model_defaults()
     models, specs = {}, {}
@@ -61,6 +66,20 @@ def main() -> None:
                         pd.Timestamp(args.end, tz="UTC"), comps,
                         defaults["backtest"]["refit_every_days"],
                         progress=lambda m: print(m, flush=True))
+    if args.merge:
+        old = pd.read_csv(args.merge)
+        old = old.loc[old["model"].isin(args.merge_models.split(","))].copy()
+        old["warnings"] = old["warnings"].fillna("")
+        for col in ("cutoff", "kickoff_utc"):
+            old[col] = pd.to_datetime(old[col], utc=True)
+            rows[col] = pd.to_datetime(rows[col], utc=True)
+        new_ids = set(rows["fixture_id"])
+        for model, group in old.groupby("model"):
+            if set(group["fixture_id"]) != new_ids:
+                raise SystemExit(f"--merge: {model} covers different fixtures; rerun it instead")
+        rows = pd.concat([rows, old[rows.columns]], ignore_index=True)
+        for label in sorted(set(old["model"])):
+            specs[label] = {"model": label, "merged_from": args.merge}
     sr = defaults["backtest"]["synthetic_rounds"]
     rounds = synthetic_rounds(rows, sr["competitions"], sr["weekday"], sr["local_kickoff"],
                               sr["fixtures_per_round"], sr["seed"])
@@ -74,7 +93,9 @@ def main() -> None:
     report = build_report(rows, rounds, reference=args.reference, meta=meta,
                           resamples=boot["resamples"], seed=boot["seed"])
     paths = write_report(report, rows, rounds, Path(args.out))
-    print(f"wrote {paths['markdown']}", flush=True)
+    log = log_experiment(experiment_record(meta, report.summary, paths),
+                         Settings.from_env().reports_dir)
+    print(f"wrote {paths['markdown']} (logged in {log})", flush=True)
 
 
 if __name__ == "__main__":

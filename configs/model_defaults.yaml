@@ -61,6 +61,13 @@ models:
     min_team_matches: 3
     seed: 0
     thread_count: 4
+  # Recalibrated CatBoost (experiment 004). Base settings come from the entries above.
+  catboost_cal:
+    calibration_days: 182
+    min_calibration_fixtures: 300
+  catboost_market_cal:
+    calibration_days: 182
+    min_calibration_fixtures: 300
   ensemble:
     team_model: dixon_coles
     # Fitted on the 2022-23 VALIDATION season (scripts/fit_ensemble_weight.py; see
