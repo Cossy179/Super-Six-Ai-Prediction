@@ -1,7 +1,9 @@
 # Default model and pipeline settings. Changing a value here changes predictions, so the
 # whole resolved config is stored with every prediction run.
 schema_version: 1
-default_model: dixon_coles
+# Promoted from dixon_coles by experiment 002's predeclared rule
+# (docs/experiments/2026-11-05-ensemble-market-first.md).
+default_model: ensemble
 
 score_grid:
   # Grid grows until the probability mass outside it is below this tolerance.

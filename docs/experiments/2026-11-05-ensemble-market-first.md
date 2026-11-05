@@ -39,3 +39,40 @@ and Dixon–Coles (flagged `ENSEMBLE_TEAM_MODEL_ONLY`) when they don't.
   2. its points per fixture (points mode) is not significantly worse than `dixon_coles`
      (the interval for ensemble minus Dixon–Coles does not lie entirely below zero).
 - **Otherwise** keep `dixon_coles` as the default and report the result.
+
+## Results (added after the run)
+
+Run at code `cb28f55`; generated output in
+[`2026-11-05-ensemble-generated-report.md`](2026-11-05-ensemble-generated-report.md).
+7,441 fixtures. 2.7% had no pre-cutoff odds and used Dixon–Coles.
+
+| Model | Exact-score log loss ↓ | RPS ↓ | Exact hits (jackpot) | Points/fixture (points mode) |
+|---|---:|---:|---:|---:|
+| `ensemble` | **2.8810** | **0.2095** | 13.0% | **1.326** |
+| `market_poisson` | 2.8818 | 0.2098 | 12.9% | 1.323 |
+| `dixon_coles` | 2.9071 | 0.2138 | 12.7% | 1.299 |
+
+Ensemble minus Dixon–Coles (95% block-bootstrap intervals):
+
+- exact-score log loss −0.0261 (−0.0318 to −0.0209): **better**;
+- points per fixture, points mode +0.0276 (+0.0022 to +0.0533): **better**, which more
+  than satisfies "not significantly worse";
+- the ensemble is ahead in every season on log loss, and in three of four on points mode.
+
+Against `market_poisson` the differences are small, as expected. They come only from the
+fixtures without odds, where Dixon–Coles is a better fallback than the league average.
+RPS and Brier differences favour the ensemble, and log loss is level within noise.
+
+**Decision:** both predeclared conditions hold, so `ensemble` is now `default_model`.
+
+## Caveats
+
+- This is a second use of the 2023–26 window. The weight was fixed on 2022-23 beforehand,
+  and the rule was committed before the run. The live shadow period is still the real
+  test.
+- The gain depends on having pre-deadline odds. In live use, run `super6 data upcoming`
+  after the provider publishes the weekend's fixtures (usually by Friday), or enter odds
+  in the round file. Fixtures without odds fall back to Dixon–Coles and are shown as
+  `results model` in the `basis` column.
+- With w = 1 the team model contributes only when odds are missing. Better use of team
+  information (xG, line-ups) is the next candidate for adding value beyond the market.

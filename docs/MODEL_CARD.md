@@ -1,4 +1,26 @@
-# Model card: `dixon_coles` (default) and `poisson`
+# Model card: `ensemble` (default), `dixon_coles` and `poisson`
+
+## Default: `ensemble` (market first, results-model fallback)
+
+For each fixture, the ensemble uses the market-implied distribution when bookmaker odds
+were collected before the cutoff. Otherwise it uses the Dixon–Coles distribution described
+below, flagged `ENSEMBLE_TEAM_MODEL_ONLY` and shown as `basis: results model`.
+
+- **Market component:** the bookmaker margin is removed proportionally. Independent-Poisson
+  goal rates are then solved to match the home/draw/away probabilities and, where quoted,
+  the over/under 2.5 goals probability. Odds older than four days are flagged
+  `MARKET_ODDS_STALE`.
+- **Weight:** `market_weight = 1.0`, fitted on the 2022-23 validation season. Log loss
+  improved steadily as the market weight rose, under both an arithmetic mixture and a
+  log-rate blend (experiment 002).
+- **Held out, 2023-07 → 2026-11:** exact-score log loss 2.881 vs 2.907 for Dixon–Coles,
+  and points per fixture 1.326 vs 1.299. Both differences have 95% intervals that exclude
+  zero. It was promoted by a rule declared before the test.
+- **Dependency:** the advantage exists only when pre-deadline odds are available. Run
+  `super6 data upcoming` before predicting, or enter odds in the round file.
+
+The rest of this card describes the results-based team-strength models, which are used
+for fixtures without odds and as the baseline the ensemble must beat.
 
 ## Purpose
 
@@ -51,9 +73,8 @@ see the experiment record. Plain `poisson` performs the same as `dixon_coles`.
 
 ## Known limitations
 
-- **The market is better.** Bookmaker odds carry information the model cannot see. Until
-  an ensemble exists, compare against `--model market_poisson` when you have pre-deadline
-  odds.
+- **The market is better.** Bookmaker odds carry information the model cannot see. That
+  is why the default ensemble uses odds whenever they exist.
 - **Information gaps.** Teams whose situation changed recently (new manager, injuries,
   transfer window) are judged only on their weighted past results.
 - **Newly promoted teams** from outside the ingested leagues start at an average rating and

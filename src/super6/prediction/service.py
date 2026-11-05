@@ -196,6 +196,17 @@ def forecast_round(
 
 
 # --------------------------------------------------------------------------- output
+def forecast_basis(pred: Prediction) -> str:
+    """What drove a fixture's forecast: bookmaker odds, results-based model, or a baseline."""
+    applied = pred.details.get("market_weight_applied")
+    if applied is not None:
+        return "market odds" if applied >= 1.0 else ("blend" if applied > 0 else "results model")
+    if pred.model == "market_poisson":
+        return "baseline (no odds)" if "fallback" in pred.details else "market odds"
+    return "results model" if pred.model in ("dixon_coles", "poisson") else pred.model
+
+
+
 def _alternatives(picks: RoundPicks, fixture_id: str) -> list[dict[str, Any]]:
     fp = next(f for f in picks.fixtures if f.fixture_id == fixture_id)
     return [{"home_goals": a.home_goals, "away_goals": a.away_goals,
@@ -222,6 +233,7 @@ def forecast_to_json(fc: RoundForecast, registry: TeamRegistry | None = None,
             "top_scores": [{"home_goals": s.home_goals, "away_goals": s.away_goals,
                             "probability": round(s.probability, 6)}
                            for s in pred.distribution.top_scores(5)],
+            "forecast_basis": forecast_basis(pred),
             "warnings": list(pred.warnings),
         })
     modes: dict[str, Any] = {}

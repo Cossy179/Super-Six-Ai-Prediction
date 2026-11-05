@@ -56,6 +56,22 @@ def test_falls_back_to_team_model_without_odds(
     assert "MARKET_ODDS_UNAVAILABLE_FALLBACK" not in ens.warnings
 
 
+def test_forecast_basis_and_stale_odds(league: tuple[MatchHistory, SyntheticTruth]) -> None:
+    from super6.prediction.service import forecast_basis
+
+    history, cutoff, fx = _setup(league)
+    view = history.view(cutoff)
+    ens = build_model("ensemble").fit(view).predict(fx, view)
+    assert forecast_basis(ens) == "market odds"
+    assert forecast_basis(build_model("dixon_coles").fit(view).predict(fx, view)) == \
+        "results model"
+    late = history.view(cutoff + pd.Timedelta(days=6))
+    later_fx = FixtureSpec(fx.fixture_id, fx.competition, fx.home_team, fx.away_team,
+                           (cutoff + pd.Timedelta(days=7)).to_pydatetime())
+    stale = build_model("market_poisson").fit(late).predict(later_fx, late)
+    assert any(w.startswith("MARKET_ODDS_STALE") for w in stale.warnings)
+
+
 def test_rejects_bad_configuration() -> None:
     with pytest.raises(ValueError):
         EnsembleModel(market_weight=1.5)

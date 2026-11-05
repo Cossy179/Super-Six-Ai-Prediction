@@ -31,10 +31,10 @@ super6 predict rounds/example-round.yaml
 Example output for the **illustrative** round file (invented fixtures, not an official round):
 
 ```text
-fixture                                     points  jackpot  P(jackpot pick)  E[pts]  H/D/A              xG h/a
-Arsenal v Newcastle United                  2-0     2-0      12.8%            1.75    68.4%/19.7%/11.9%  2.09/0.75
-Manchester United v Brighton & Hove Albion  1-2     1-1      11.6%            1.06    35.0%/25.0%/40.0%  1.43/1.54
-Coventry City v Fulham                      0-1     1-1      12.8%            1.04    35.2%/26.9%/37.9%  1.29/1.34
+fixture                                     points  jackpot  P(jackpot pick)  E[pts]  H/D/A              xG h/a     basis
+Arsenal v Newcastle United                  2-0     2-0      12.8%            1.75    68.4%/19.7%/11.9%  2.09/0.75  results model
+Manchester United v Brighton & Hove Albion  1-2     1-1      11.6%            1.06    35.0%/25.0%/40.0%  1.43/1.54  results model
+Coventry City v Fulham                      0-1     1-1      12.8%            1.04    35.2%/26.9%/37.9%  1.29/1.34  results model
 ...
 expected points: points mode 7.77, jackpot mode 6.96
 Golden Goal: minute 4 (80% interval 1–14, expected error ±3.9 min) [uniform-hazard-poisson-simulation — baseline]
@@ -44,17 +44,25 @@ Where the two modes differ, points mode is backing the more likely *result*: Bri
 Fulham are slight favourites, so 1-2 and 0-1 beat 1-1 on expected points even though 1-1
 is the single most likely score.
 
-## First backtest (held out, 2023-24 → November 2026, 7,441 fixtures)
+The example round's fixtures are invented, so there are no odds for them. Every row
+therefore shows `basis: results model`, and the CLI prints a reminder to fetch odds.
+
+## Which model, and how well it does
+
+The default model is **`ensemble`**. It uses bookmaker odds collected before the cutoff
+when they exist, and falls back to the results-based Dixon–Coles model when they don't.
+Held-out backtest, 2023-24 → November 2026, 7,441 fixtures:
 
 | Model | Exact-score log loss ↓ | Exact hit rate | Points/fixture |
 |---|---:|---:|---:|
-| Market-implied (pre-match odds) | **2.882** | 12.9% | 1.32 |
-| Dixon–Coles (default) | 2.907 | 12.7% | 1.30 |
+| **Ensemble (default)** | **2.881** | 13.0% | **1.33** |
+| Market-implied only | 2.882 | 12.9% | 1.32 |
+| Dixon–Coles only | 2.907 | 12.7% | 1.30 |
 | Best simple baseline (best of three, per column) | 2.969 | 12.1% | 1.21 |
 
-The team-strength model clearly beats the simple baselines, but the betting market is
-better still on probability quality. Combining the two is the next step. Full write-up:
-[`docs/experiments/2026-11-05-phase1-walk-forward.md`](docs/experiments/2026-11-05-phase1-walk-forward.md).
+Write-ups: [experiment 001](docs/experiments/2026-11-05-phase1-walk-forward.md) (models
+vs baselines) and [experiment 002](docs/experiments/2026-11-05-ensemble-market-first.md)
+(the ensemble, with its promotion rule declared before the test).
 
 With Docker and PostgreSQL instead: `cp .env.example .env`, set a password, then follow the
 commands at the top of [`docker-compose.yml`](docker-compose.yml).
@@ -62,17 +70,19 @@ commands at the top of [`docker-compose.yml`](docker-compose.yml).
 ## Weekly workflow
 
 1. **Refresh data**: `super6 data download && super6 data ingest`.
-2. **Write the round file.** Copy `rounds/example-round.yaml`, set `illustrative: false`,
+2. **Get pre-deadline odds**: `super6 data upcoming`, once the provider lists the
+   weekend's fixtures (usually by Friday). It also prints their UTC kick-off times.
+   Without odds, the forecast falls back to the weaker results-only model.
+   You can also type odds into the round file (`odds:`; see the example).
+3. **Write the round file.** Copy `rounds/example-round.yaml`, set `illustrative: false`,
    and enter the official six fixtures, kick-offs and deadline from the Super 6 site.
-   `super6 data upcoming` lists fixtures the data provider has published, with their
-   UTC kick-off times.
-3. **Predict**: `super6 predict rounds/<round>.yaml --json reports/<round>.json`. The run is
+4. **Predict**: `super6 predict rounds/<round>.yaml --json reports/<round>.json`. The run is
    stored with its inputs fingerprint, model version and rules version. It is `BLOCKED` if
    the fixtures, rules or probabilities fail checks.
-4. **Lock** the run you are going to use, before the deadline: `super6 runs lock <run-id>`.
+5. **Lock** the run you are going to use, before the deadline: `super6 runs lock <run-id>`.
    A locked run cannot be edited or deleted.
-5. **Enter the picks yourself** on the official Super 6 site.
-6. **Settle** after the matches: `super6 data download && super6 data ingest && super6 settle <round-id>`.
+6. **Enter the picks yourself** on the official Super 6 site.
+7. **Settle** after the matches: `super6 data download && super6 data ingest && super6 settle <round-id>`.
 
 Other commands: `super6 runs list`, `super6 runs show <id>`, `super6 ratings --competition E0`,
 `super6 backtest --start 2023-07-01 --end 2026-11-05`, and `super6 --help`.
@@ -85,7 +95,7 @@ Other commands: `super6 runs list`, `super6 runs show <id>`, `super6 ratings --c
 | Ingestion | `ingestion/` | Football-Data.co.uk adapter; raw files kept with checksum and retrieval time; validation and quarantine; alias review warnings |
 | Storage | `storage/`, `migrations/` | DESIGN §14 schema, Alembic migrations (SQLite + PostgreSQL), immutable locked runs |
 | Point-in-time data | `features/point_in_time.py` | The only path from history to models: results published and odds collected before the cutoff |
-| Models | `models/` | Dixon–Coles (default), team-strength Poisson, and baselines: league average, empirical scorelines, rolling goals, market-implied |
+| Models | `models/` | Market-first ensemble (default), Dixon–Coles, team-strength Poisson, market-implied, and baselines: league average, empirical scorelines, rolling goals |
 | Score grid | `prediction/score_grid.py` | Adaptive grid with explicit tail mass; never silently renormalised |
 | Optimiser | `prediction/optimiser.py` | Jackpot and points modes with deterministic tie-breaks |
 | Golden Goal | `golden_goal/` | 1-indexed minutes, staggered kick-offs, closest-minute median. A **labelled baseline** until goal-timing data is licensed |
@@ -93,11 +103,13 @@ Other commands: `super6 runs list`, `super6 runs show <id>`, `super6 ratings --c
 
 ## Status
 
-Phase 1 of the [roadmap](DESIGN.md#20-delivery-roadmap) is in place. The first held-out
-backtest is written up in [`docs/experiments/`](docs/experiments/). Not yet built:
+Phase 1 of the [roadmap](DESIGN.md#20-delivery-roadmap) is in place, plus the first
+Phase 2 step (the market-first ensemble). Experiments are written up in
+[`docs/experiments/`](docs/experiments/). Not yet built:
 
-- xG and other enriched features, a CatBoost challenger, ensembles and calibration layers
-  (Phase 2). xG columns are already ingested where the provider supplies them (2026-27).
+- xG and other enriched features, a CatBoost challenger, and calibration layers
+  (rest of Phase 2). xG columns are already ingested where the provider supplies them
+  (2026-27).
 - Licensed goal-timing data, a hazard model for Golden Goal, scheduling and alerting
   (Phase 3).
 - FastAPI service and Next.js dashboard (Phase 4). The JSON written by

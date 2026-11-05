@@ -13,7 +13,7 @@ from super6.features.point_in_time import MatchHistory
 from super6.ingestion.canonicalize import TeamRegistry
 from super6.models import build_model
 from super6.models.base import CutoffAfterKickoffError
-from super6.prediction.round_spec import RoundSpec, resolve_round
+from super6.prediction.round_spec import OddsInput, RoundSpec, resolve_round
 from super6.prediction.service import (
     LockError,
     forecast_round,
@@ -179,3 +179,28 @@ def test_cutoff_after_deadline_blocks(rules: CompetitionRules,
     with pytest.raises(CutoffAfterKickoffError):
         forecast_round(history, resolved, kickoff, build_model("poisson"), rules,
                        {"n_simulations": 1000})
+
+
+def test_round_file_odds_drive_the_ensemble(rules: CompetitionRules,
+                                            league: tuple[MatchHistory, SyntheticTruth]) -> None:
+    history, _ = league
+    reg = TeamRegistry()
+    for t in sorted(set(history.matches["home_team"])):
+        reg.add_team(t, t)
+    kickoff = (history.matches["kickoff_utc"].max() + pd.Timedelta(days=7)).to_pydatetime()
+    spec = _spec(rules, kickoff)
+    odds = {"home": 1.5, "draw": 4.2, "away": 6.5, "over25": 1.7, "under25": 2.2,
+            "available_at": kickoff - timedelta(hours=20)}
+    late_odds = {**odds, "available_at": kickoff - timedelta(minutes=30)}  # after the cutoff
+    fixtures = [spec.fixtures[0].model_copy(update={"odds": OddsInput.model_validate(odds)}),
+                spec.fixtures[1].model_copy(update={"odds": OddsInput.model_validate(late_odds)}),
+                *spec.fixtures[2:]]
+    resolved = resolve_round(spec.model_copy(update={"fixtures": fixtures}), reg, rules, {"SYN"})
+    fc = forecast_round(history, resolved, kickoff - timedelta(hours=2), build_model("ensemble"),
+                        rules, {"n_simulations": 1000})
+    payload = forecast_to_json(fc, reg)
+    basis = [f["forecast_basis"] for f in payload["fixtures"]]
+    assert basis[0] == "market odds"
+    assert basis[1:] == ["results model"] * 5  # late odds are invisible at the cutoff
+    first = payload["fixtures"][0]["outcome_probabilities"]
+    assert first["home"] > 0.55  # 1.5 home odds ≈ 63% after removing the margin
