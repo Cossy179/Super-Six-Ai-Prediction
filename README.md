@@ -50,7 +50,7 @@ is the single most likely score.
 |---|---:|---:|---:|
 | Market-implied (pre-match odds) | **2.882** | 12.9% | 1.32 |
 | Dixon–Coles (default) | 2.907 | 12.7% | 1.30 |
-| Best simple baseline | 2.969 | 12.1% | 1.21 |
+| Best simple baseline (best of three, per column) | 2.969 | 12.1% | 1.21 |
 
 The team-strength model clearly beats the simple baselines, but the betting market is
 better still on probability quality. Combining the two is the next step. Full write-up:
