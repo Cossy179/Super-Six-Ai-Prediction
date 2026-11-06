@@ -41,6 +41,11 @@ class CompetitionRules(BaseModel):
     golden_goal_minute_indexing: Literal["one_based"]
     golden_goal_tiebreak: Literal["closest_minute", "exact_minute"]
     golden_goal_stoppage_time: Literal["capped_at_period_end", "continuous_clock"]
+    # Which goal is "the first goal" when kick-offs are staggered: the first in real
+    # (wall-clock) time, or the one with the lowest match-clock minute in any match.
+    golden_goal_first_goal: Literal["first_in_real_time", "earliest_match_minute"]
+    # The answer for a round with no goals in any fixture (None: not defined by the rules).
+    golden_goal_no_goal_minute: int | None = Field(default=None, ge=0, le=120)
 
     settlement_period: Literal["full_time"]
     submission_policy: Literal["manual_only"]

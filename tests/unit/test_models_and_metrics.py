@@ -152,3 +152,33 @@ def test_fixture_spec_validation() -> None:
         FixtureSpec("x", "E0", "a", "a", datetime(2024, 1, 1, tzinfo=UTC))
     with pytest.raises(ValueError):
         FixtureSpec("x", "E0", "a", "b", datetime(2024, 1, 1) + timedelta(0))
+
+
+def test_market_dc_matches_the_draw_price_that_poisson_misses() -> None:
+    from super6.models.market import _dc_probs, _model_probs, devig, implied_dc
+
+    odds = MarketOdds(home=2.05, draw=3.4, away=3.7, over25=1.95, under25=1.9,
+                      available_at=datetime(2024, 1, 1, tzinfo=UTC))
+    (ph, pdraw, pa), po = devig(odds)
+    lam_h, lam_a, _ = implied_rates(odds)
+    assert _model_probs(lam_h, lam_a)[1] < pdraw - 0.01  # Poisson under-prices the draw
+    dh, da, rho, rmse = implied_dc(odds)
+    assert rho < 0 and rmse < 1e-6
+    assert np.allclose(_dc_probs(dh, da, rho), [ph, pdraw, pa, po], atol=1e-6)
+    # Without over/under odds, rho is unidentified and stays 0.
+    no_ou = MarketOdds(home=2.05, draw=3.4, away=3.7,
+                       available_at=datetime(2024, 1, 1, tzinfo=UTC))
+    assert implied_dc(no_ou)[2] == 0.0
+
+
+def test_ensemble_can_use_the_dc_market(league: tuple[MatchHistory, SyntheticTruth]) -> None:
+    history, _ = league
+    m = history.matches
+    cutoff = m["kickoff_utc"].iloc[-12] - pd.Timedelta(minutes=1)
+    view = history.view(cutoff)
+    r = m.loc[m["kickoff_utc"] > cutoff].iloc[0]
+    fx = FixtureSpec(r["fixture_id"], r["competition"], r["home_team"], r["away_team"],
+                     r["kickoff_utc"].to_pydatetime())
+    ens = build_model("ensemble", {"market_model": "market_dc"}).fit(view).predict(fx, view)
+    direct = build_model("market_dc").fit(view).predict(fx, view)
+    assert np.array_equal(ens.distribution.grid, direct.distribution.grid)

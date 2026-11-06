@@ -1,4 +1,44 @@
-# Model card: `dixon_coles` (default) and `poisson`
+# Model card: `ensemble` (default), `dixon_coles` and `poisson`
+
+## Default: `ensemble` (market first, results-model fallback)
+
+For each fixture, the ensemble uses the market-implied distribution when bookmaker odds
+were collected before the cutoff. Otherwise it uses the Dixon–Coles distribution described
+below, flagged `ENSEMBLE_TEAM_MODEL_ONLY` and shown as `basis: results model`.
+
+- **Market component:** the bookmaker margin is removed proportionally. Independent-Poisson
+  goal rates are then solved to match the home/draw/away probabilities and, where quoted,
+  the over/under 2.5 goals probability. Odds older than four days are flagged
+  `MARKET_ODDS_STALE`.
+- **Weight:** `market_weight = 1.0`, fitted on the 2022-23 validation season. Log loss
+  improved steadily as the market weight rose, under both an arithmetic mixture and a
+  log-rate blend (experiment 002).
+- **Held out, 2023-07 → 2026-11:** exact-score log loss 2.881 vs 2.907 for Dixon–Coles,
+  and points per fixture 1.326 vs 1.299. Both differences have 95% intervals that exclude
+  zero. It was promoted by a rule declared before the test.
+- **Dependency:** the advantage exists only when pre-deadline odds are available. Run
+  `super6 data upcoming` before predicting, or enter odds in the round file.
+
+**Calibration of the default.** Expected points per fixture match realised points
+closely in every window: gaps of +0.006 (2018-19), −0.020 (2019–22) and −0.006
+(2023–26). Home/draw/away probabilities track observed frequencies, with draws slightly
+under-forecast (24–25% forecast vs 25–26% observed). See the generated calibration
+tables in [`experiments/`](experiments/).
+
+**Challengers tested and not adopted** (see the [experiment index](experiments/README.md)):
+
+| Challenger | Why it was rejected |
+|---|---|
+| CatBoost, results only or with market inputs (003) | Worse than the ensemble; results-only no better than Dixon–Coles; overconfident |
+| CatBoost with leak-free recalibration (004) | Calibration fixed the overconfidence but not the accuracy; still worse on log loss |
+| Dixon–Coles-shaped market model (005) | Matching the market's draw price overshoots; no log-loss gain |
+| Bivariate Poisson (DESIGN Model C) | Not built: no residual home/away goal correlation in about 13,000 held-out forecasts |
+
+All challengers stay available (`--model catboost`, `catboost_market`, `catboost_cal`,
+`catboost_market_cal`, `market_dc`) for research.
+
+The rest of this card describes the results-based team-strength models, which are used
+for fixtures without odds and as the baseline the ensemble must beat.
 
 ## Purpose
 
@@ -51,9 +91,8 @@ see the experiment record. Plain `poisson` performs the same as `dixon_coles`.
 
 ## Known limitations
 
-- **The market is better.** Bookmaker odds carry information the model cannot see. Until
-  an ensemble exists, compare against `--model market_poisson` when you have pre-deadline
-  odds.
+- **The market is better.** Bookmaker odds carry information the model cannot see. That
+  is why the default ensemble uses odds whenever they exist.
 - **Information gaps.** Teams whose situation changed recently (new manager, injuries,
   transfer window) are judged only on their weighted past results.
 - **Newly promoted teams** from outside the ingested leagues start at an average rating and
@@ -65,7 +104,29 @@ see the experiment record. Plain `poisson` performs the same as `dixon_coles`.
 
 ## Golden Goal
 
-The Golden Goal minute comes from a **labelled baseline** (`uniform-hazard-poisson-simulation`).
-It assumes each match's goals arrive at a constant rate and uses the real kick-off times.
-It has not been evaluated, because no licensed goal-timing data is ingested. Treat it as
-a rough guide only.
+The Golden Goal minute uses a **goal-time profile** scaled by each match's expected goals
+from the score model:
+
+- **`uniform-hazard`** (the default): a constant scoring rate through the match.
+- **`empirical-hazard`** (`golden_goal.profile: empirical`): shares by 5-minute band and
+  stoppage time. They are fitted to Premier League goal minutes (openfootball, CC0) from
+  matches whose results were public before the cutoff.
+
+Under the official reading (earliest match minute across the six games), the round's
+distribution is exact. The pick is its median, matching the closest-minute tie-break.
+
+[Experiment 006](experiments/2026-11-06-golden-goal-profile.md) tested the two profiles on
+January–June 2026 (194 matches, 19 synthetic rounds):
+
+- First-goal log loss was level: empirical minus uniform +0.0023, 95% CI −0.039 to
+  +0.044.
+- Mean pick error: 5.11 minutes (uniform) and 4.74 (empirical), not significantly
+  different.
+
+The empirical profile was therefore **not promoted**.
+
+Known weaknesses of the default:
+
+- It puts too many first goals in the opening 15 minutes (forecast 36%, observed 27%).
+- The expected error it reports is optimistic: 3.9 minutes forecast against 5.1
+  realised.

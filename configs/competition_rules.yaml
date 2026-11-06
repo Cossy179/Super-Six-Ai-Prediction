@@ -1,32 +1,46 @@
 # Versioned Super 6 competition rules (DESIGN.md §3.5).
 #
-# These values are configuration defaults taken from public descriptions of the game.
-# They are NOT verified against the operator's current terms. Before relying on a
-# prediction, check https://super6.skysports.com/ and the linked terms, update the
-# fields below, set `verified: true`, and bump `rules_version`.
+# Checked on 5 November 2026 against the operator's 2026/27 Terms & Conditions and FAQ
+# (sources below; key clauses are quoted in docs/RULES.md). Re-check when a new season's
+# terms are published or the operator announces a change, then bump `rules_version`.
 #
 # Unknown keys are rejected: a new rule we do not understand blocks predictions rather
 # than being silently ignored.
 schema_version: 1
 competition: sky_super_6
-rules_version: "public-summary-2026-11-05"
-verified: false
-verified_on: null
+rules_version: "sky-terms-2026-27"
+verified: true
+verified_on: 2026-11-05
 source_urls:
-  - https://super6.skysports.com/
-  - https://www.squawka.com/en/news/sky-bet-super-6-predictions-latest-matches-19-08-26/
+  - https://super6.skysports.com/terms
+  - https://super6.skysports.com/faq
 
 fixtures_per_round: 6
+# "A maximum of 5 points can be achieved for each fixture": correct result = 2,
+# correct score = 5 (not 5 + 2).
 points_exact_score: 5
 points_correct_result_only: 2
 points_incorrect: 0
 
 golden_goal_enabled: true
+# "0 - 59 seconds = 1st minute ... if a player selects minute 6 ... 5m00s - 5m59s".
 golden_goal_minute_indexing: one_based
+# "closest to the actual time of the first goal ... times before and after ... equally".
 golden_goal_tiebreak: closest_minute
-# How a stoppage-time goal is recorded (e.g. 45+2). Unverified assumption:
-# capped_at_period_end records 45+2 as 45 and 90+3 as 90.
+# "Any goals scored in injury time will be recorded as forty-five minutes for the first
+# half and ninety minutes for the second half."
 golden_goal_stoppage_time: capped_at_period_end
+# Terms: "the time of the earliest goal to be scored in all matches". INTERPRETATION:
+# the lowest recorded minute in any game. Stoppage-time goals are all recorded as 45/90,
+# so goals cannot be ordered in real time from the published data. When kick-offs are
+# staggered, the CLI also reports the minute under the real-time reading.
+golden_goal_first_goal: earliest_match_minute
+# "If there are no goals in any of the fixtures, then the correct answer for that Round
+# will be deemed to be 0."
+golden_goal_no_goal_minute: 0
 
+# "All predictions are settled at Full-time (including stoppage time). Extra time and
+# penalty shoot-outs do not count." Postponed, abandoned or incomplete (< 90 minutes)
+# fixtures are void.
 settlement_period: full_time
 submission_policy: manual_only

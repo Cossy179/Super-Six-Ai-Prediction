@@ -92,13 +92,14 @@ def walk_forward(
         view = history.view(batch.cutoff)
         for label, model in models.items():
             current = fitted.get(label)
-            if current is None or batch.cutoff - current.cutoff >= refit:
+            model_refit = max(refit, timedelta(days=model.refit_every_days or 0.0))
+            if current is None or batch.cutoff - current.cutoff >= model_refit:
                 # Cold fits (no warm start) so a replayed forecast is identical to a
                 # live `super6 predict` at the same cutoff.
                 current = model.fit(view)
                 fitted[label] = current
-            for fx, (hg, ag) in zip(batch.fixtures, batch.actual, strict=True):
-                pred = current.predict(fx, view)
+            preds = current.predict_many(batch.fixtures, view)
+            for fx, (hg, ag), pred in zip(batch.fixtures, batch.actual, preds, strict=True):
                 dist = pred.distribution
                 out = dist.outcome_probabilities()
                 res = actual_result(hg, ag)

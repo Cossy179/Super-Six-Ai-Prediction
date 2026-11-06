@@ -9,11 +9,11 @@ import pytest
 from sqlalchemy import Engine, delete, select, update
 from sqlalchemy.exc import DBAPIError
 
-from super6.features.point_in_time import MatchHistory
+from super6.features.point_in_time import GOAL_COLUMNS, MatchHistory
 from super6.ingestion.canonicalize import TeamRegistry
 from super6.models import build_model
 from super6.models.base import CutoffAfterKickoffError
-from super6.prediction.round_spec import RoundSpec, resolve_round
+from super6.prediction.round_spec import OddsInput, RoundSpec, resolve_round
 from super6.prediction.service import (
     LockError,
     forecast_round,
@@ -54,7 +54,7 @@ def _spec(rules: CompetitionRules, kickoff: datetime, n: int = 6, **extra: objec
         "round_id": "test-round-1",
         "deadline_utc": kickoff,
         "rules_version": rules.rules_version,
-        "illustrative": True,
+        "illustrative": False,
         "fixtures": [{"home": h, "away": a, "competition": "SYN", "kickoff_utc": kickoff}
                      for h, a in pairs],
     }
@@ -74,10 +74,10 @@ def test_full_round_lifecycle(engine: Engine, rules: CompetitionRules,
     model = build_model("dixon_coles")
     fc = forecast_round(history, resolved, cutoff, model, rules, {"n_simulations": 5000})
     assert fc.status is RunStatus.VALIDATED
-    assert "ILLUSTRATIVE_DATA_ONLY" in fc.warnings and "RULES_UNVERIFIED" in fc.warnings
+    assert "RULES_UNVERIFIED" not in fc.warnings
     payload = forecast_to_json(fc, reg)
     assert len(payload["modes"]["points"]["fixtures"]) == 6
-    assert payload["golden_goal"]["method"] == "uniform-hazard-poisson-simulation"
+    assert payload["golden_goal"]["method"] == "uniform-hazard"
     # Deterministic: same inputs → same fingerprint and probabilities.
     again = forecast_round(history, resolved, cutoff, model, rules, {"n_simulations": 5000})
     assert again.run_id == fc.run_id
@@ -179,3 +179,152 @@ def test_cutoff_after_deadline_blocks(rules: CompetitionRules,
     with pytest.raises(CutoffAfterKickoffError):
         forecast_round(history, resolved, kickoff, build_model("poisson"), rules,
                        {"n_simulations": 1000})
+
+
+def test_round_file_odds_drive_the_ensemble(rules: CompetitionRules,
+                                            league: tuple[MatchHistory, SyntheticTruth]) -> None:
+    history, _ = league
+    reg = TeamRegistry()
+    for t in sorted(set(history.matches["home_team"])):
+        reg.add_team(t, t)
+    kickoff = (history.matches["kickoff_utc"].max() + pd.Timedelta(days=7)).to_pydatetime()
+    spec = _spec(rules, kickoff)
+    odds = {"home": 1.5, "draw": 4.2, "away": 6.5, "over25": 1.7, "under25": 2.2,
+            "available_at": kickoff - timedelta(hours=20)}
+    late_odds = {**odds, "available_at": kickoff - timedelta(minutes=30)}  # after the cutoff
+    fixtures = [spec.fixtures[0].model_copy(update={"odds": OddsInput.model_validate(odds)}),
+                spec.fixtures[1].model_copy(update={"odds": OddsInput.model_validate(late_odds)}),
+                *spec.fixtures[2:]]
+    resolved = resolve_round(spec.model_copy(update={"fixtures": fixtures}), reg, rules, {"SYN"})
+    fc = forecast_round(history, resolved, kickoff - timedelta(hours=2), build_model("ensemble"),
+                        rules, {"n_simulations": 1000})
+    payload = forecast_to_json(fc, reg)
+    basis = [f["forecast_basis"] for f in payload["fixtures"]]
+    assert basis[0] == "market odds"
+    assert basis[1:] == ["results model"] * 5  # late odds are invisible at the cutoff
+    first = payload["fixtures"][0]["outcome_probabilities"]
+    assert first["home"] > 0.55  # 1.5 home odds ≈ 63% after removing the margin
+
+
+def test_staggered_kickoffs_report_the_alternative_golden_goal(
+    rules: CompetitionRules, league: tuple[MatchHistory, SyntheticTruth]
+) -> None:
+    history, _ = league
+    reg = TeamRegistry()
+    for t in sorted(set(history.matches["home_team"])):
+        reg.add_team(t, t)
+    kickoff = (history.matches["kickoff_utc"].max() + pd.Timedelta(days=7)).to_pydatetime()
+    early = kickoff - timedelta(hours=2, minutes=30)
+    spec = _spec(rules, kickoff)
+    fixtures = [spec.fixtures[0].model_copy(update={"kickoff_utc": early}), *spec.fixtures[1:]]
+    staggered = spec.model_copy(update={"fixtures": fixtures, "deadline_utc": early})
+    resolved = resolve_round(staggered, reg, rules, {"SYN"})
+    assert resolved.block_reasons == []
+    fc = forecast_round(history, resolved, early - timedelta(hours=1), build_model("poisson"),
+                        rules, {"n_simulations": 5000})
+    warning = [w for w in fc.warnings if w.startswith("GOLDEN_GOAL_STAGGERED_KICKOFFS")]
+    assert len(warning) == 1 and "first_in_real_time" in warning[0]
+    # The match-clock reading ignores the early kick-off, so the pick stays early.
+    assert fc.golden_goal is not None and fc.golden_goal.minute <= 7
+    # A deadline before the first kick-off is allowed but flagged.
+    earlier = resolve_round(spec.model_copy(update={"deadline_utc": kickoff - timedelta(hours=1)}),
+                            reg, rules, {"SYN"})
+    assert any(w.startswith("DEADLINE_BEFORE_FIRST_KICKOFF") for w in earlier.warnings)
+
+
+def test_illustrative_rounds_are_never_saved(engine: Engine, rules: CompetitionRules,
+                                             league: tuple[MatchHistory, SyntheticTruth]
+                                             ) -> None:
+    from super6.prediction.service import IllustrativeRoundError
+    from super6.storage.models import Fixture, Super6Round
+
+    history, _ = league
+    reg = _setup(engine, history)
+    kickoff = (history.matches["kickoff_utc"].max() + pd.Timedelta(days=7)).to_pydatetime()
+    spec = _spec(rules, kickoff, illustrative=True)
+    resolved = resolve_round(spec, reg, rules, {"SYN"})
+    assert "ILLUSTRATIVE_DATA_ONLY" in resolved.warnings
+    fc = forecast_round(history, resolved, kickoff - timedelta(hours=2), build_model("poisson"),
+                        rules, {"n_simulations": 1000})
+    with pytest.raises(IllustrativeRoundError), session_scope(engine) as s:
+        persist_forecast(s, resolved, fc)
+    with session_scope(engine) as s:
+        assert s.scalar(select(Super6Round.id)) is None
+        assert s.scalar(select(Fixture.id)) is None
+
+
+def test_updating_a_round_keeps_its_fixture_links(
+    engine: Engine, rules: CompetitionRules, league: tuple[MatchHistory, SyntheticTruth]
+) -> None:
+    from super6.storage.models import Super6RoundFixture
+
+    history, _ = league
+    reg = _setup(engine, history)
+    kickoff = (history.matches["kickoff_utc"].max() + pd.Timedelta(days=7)).to_pydatetime()
+    model = build_model("poisson")
+    for note in ("first import", "re-imported with a new note"):
+        resolved = resolve_round(_spec(rules, kickoff, source_note=note), reg, rules, {"SYN"})
+        fc = forecast_round(history, resolved, kickoff - timedelta(hours=2), model, rules,
+                            {"n_simulations": 1000})
+        with session_scope(engine) as s:
+            persist_forecast(s, resolved, fc)
+        with session_scope(engine) as s:
+            links = s.scalars(select(Super6RoundFixture.fixture_id).where(
+                Super6RoundFixture.round_id == "test-round-1")).all()
+            assert sorted(links) == sorted(f.fixture_id for f in resolved.fixtures)
+
+
+def test_unconfirmed_rounds_cannot_be_locked(engine: Engine, rules: CompetitionRules,
+                                             league: tuple[MatchHistory, SyntheticTruth]) -> None:
+    from super6.storage.models import Super6Round
+
+    history, _ = league
+    reg = _setup(engine, history)
+    kickoff = (history.matches["kickoff_utc"].max() + pd.Timedelta(days=7)).to_pydatetime()
+    resolved = resolve_round(_spec(rules, kickoff, confirmed=False), reg, rules, {"SYN"})
+    assert any(w.startswith("ROUND_UNCONFIRMED") for w in resolved.warnings)
+    fc = forecast_round(history, resolved, kickoff - timedelta(hours=2), build_model("poisson"),
+                        rules, {"n_simulations": 1000})
+    with session_scope(engine) as s:
+        run = persist_forecast(s, resolved, fc, publish=True)
+        with pytest.raises(LockError, match="unconfirmed"):
+            lock_run(s, run.id, now=kickoff - timedelta(hours=1))
+    # Once confirmed (the round file is re-saved with confirmed: true), it can be locked.
+    confirmed = resolve_round(_spec(rules, kickoff), reg, rules, {"SYN"})
+    fc2 = forecast_round(history, confirmed, kickoff - timedelta(hours=1), build_model("poisson"),
+                         rules, {"n_simulations": 1000})
+    with session_scope(engine) as s:
+        run2 = persist_forecast(s, confirmed, fc2, publish=True)
+        lock_run(s, run2.id, now=kickoff - timedelta(minutes=30))
+        assert s.get(Super6Round, "test-round-1").spec["confirmed"] is True  # type: ignore[union-attr]
+
+
+def test_empirical_golden_goal_profile_uses_only_published_goals(
+        rules: CompetitionRules, league: tuple[MatchHistory, SyntheticTruth]) -> None:
+    history, _ = league
+    reg = TeamRegistry()
+    for t in sorted(set(history.matches["home_team"])):
+        reg.add_team(t, t)
+    finished = history.matches.dropna(subset=["home_goals"])
+    rows: list[tuple[str, int, int, float | None, str]] = []
+    for r in finished.itertuples():
+        rows += [(r.fixture_id, 2, 60 + k, None, "home") for k in range(int(r.home_goals))]
+        rows += [(r.fixture_id, 1, 10 + k, None, "away") for k in range(int(r.away_goals))]
+    rows.append(("not-yet-played", 1, 1, None, "home"))  # must never be seen
+    goals = pd.DataFrame(rows, columns=GOAL_COLUMNS)
+    hist = MatchHistory(history.matches, history.odds, goals)
+    kickoff = (history.matches["kickoff_utc"].max() + pd.Timedelta(days=7)).to_pydatetime()
+    resolved = resolve_round(_spec(rules, kickoff), reg, rules, {"SYN"})
+    cutoff = kickoff - timedelta(hours=2)
+    model = build_model("dixon_coles")
+    fc = forecast_round(hist, resolved, cutoff, model, rules, {"profile": "empirical"})
+    assert fc.golden_goal is not None and fc.golden_goal.method == "empirical-hazard"
+    assert "GOLDEN_GOAL_BASELINE_ONLY" not in fc.warnings
+    assert len(hist.view(cutoff).goal_events) == len(goals) - 1
+    uniform = forecast_round(hist, resolved, cutoff, model, rules, {"profile": "uniform"})
+    assert uniform.golden_goal is not None and uniform.golden_goal.method == "uniform-hazard"
+    assert uniform.run_id != fc.run_id  # the profile is part of the run's identity
+    # Too few published goal minutes: falls back to uniform and says so.
+    early = forecast_round(MatchHistory(history.matches, history.odds, goals.head(100)),
+                           resolved, cutoff, model, rules, {"profile": "empirical"})
+    assert any(w.startswith("GOLDEN_GOAL_PROFILE_FALLBACK") for w in early.warnings)

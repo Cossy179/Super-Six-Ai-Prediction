@@ -1,7 +1,9 @@
 # Default model and pipeline settings. Changing a value here changes predictions, so the
 # whole resolved config is stored with every prediction run.
 schema_version: 1
-default_model: dixon_coles
+# Promoted from dixon_coles by experiment 002's predeclared rule
+# (docs/experiments/2026-11-05-ensemble-market-first.md).
+default_model: ensemble
 
 score_grid:
   # Grid grows until the probability mass outside it is below this tolerance.
@@ -36,9 +38,55 @@ models:
     max_goals: 10
   market_poisson:
     devig: proportional
+  market_dc:
+    devig: proportional
+  catboost:
+    # Not tuned: library-typical settings declared before experiment 003.
+    families: [elo, goals, shots, xg, schedule, tier]
+    iterations: 600
+    depth: 4
+    learning_rate: 0.05
+    l2_leaf_reg: 3.0
+    xi_per_day: 0.001
+    max_history_days: 1460
+    min_team_matches: 3
+    seed: 0
+    thread_count: 4
+  catboost_market:
+    families: [elo, goals, shots, xg, schedule, tier]
+    iterations: 600
+    depth: 4
+    learning_rate: 0.05
+    l2_leaf_reg: 3.0
+    xi_per_day: 0.001
+    max_history_days: 1460
+    min_team_matches: 3
+    seed: 0
+    thread_count: 4
+  # Recalibrated CatBoost (experiment 004). Base settings come from the entries above.
+  catboost_cal:
+    calibration_days: 182
+    min_calibration_fixtures: 300
+  catboost_market_cal:
+    calibration_days: 182
+    min_calibration_fixtures: 300
+  ensemble:
+    team_model: dixon_coles
+    # Fitted on the 2022-23 VALIDATION season (scripts/fit_ensemble_weight.py; see
+    # docs/experiments/2026-11-05-ensemble-weight-2022-23.txt). Log loss fell steadily as
+    # the market weight rose and was best at 1.0, for both an arithmetic mixture and a
+    # log-rate blend. In effect: market when pre-cutoff odds exist, team model otherwise.
+    market_weight: 1.0
+    fitted_on: "2022-07-01/2023-07-01"
 
 golden_goal:
-  method: uniform_hazard_simulation
+  # uniform: constant scoring rate. empirical: goal-time profile fitted to stored goal
+  # minutes (`super6 data goals`) published before the cutoff; falls back to uniform with
+  # fewer than 400 goals. Decided by experiment 006.
+  profile: uniform
+  bin_minutes: 5
+  empirical_first_half_stoppage_cells: 3
+  empirical_second_half_stoppage_cells: 7
   n_simulations: 50000
   seed: 20261105
   first_half_stoppage_minutes: 2.0

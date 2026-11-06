@@ -8,7 +8,7 @@ round_id: example-2026-11-07
 illustrative: true
 source_note: "Invented fixtures for documentation; not an official Super 6 round"
 deadline_utc: "2026-11-07T15:00:00Z"
-rules_version: "public-summary-2026-11-05"   # must match configs/competition_rules.yaml
+rules_version: "sky-terms-2026-27"   # must match configs/competition_rules.yaml
 fixtures:
   - {home: Arsenal, away: Newcastle United, competition: E0, kickoff_utc: "2026-11-07T15:00:00Z"}
   - {home: Manchester United, away: Brighton, competition: E0, kickoff_utc: "2026-11-07T15:00:00Z"}

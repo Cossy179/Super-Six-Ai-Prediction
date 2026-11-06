@@ -52,8 +52,17 @@ class GoalEvent:
         return recorded_minute(self.period, self.seconds_into_period, stoppage)
 
 
-def first_goal(events: Sequence[GoalEvent]) -> GoalEvent | None:
-    """Earliest goal in real (wall-clock) time across fixtures with staggered kick-offs."""
+def first_goal(events: Sequence[GoalEvent], definition: str = "first_in_real_time",
+               stoppage: StoppageMode = "capped_at_period_end") -> GoalEvent | None:
+    """The round's Golden Goal under the configured definition.
+
+    ``first_in_real_time``: the earliest goal by wall clock across staggered kick-offs.
+    ``earliest_match_minute``: the goal with the lowest recorded minute in any match.
+    """
     if not events:
         return None
-    return min(events, key=lambda e: (e.real_time_utc, e.minute(), e.fixture_id))
+    if definition == "earliest_match_minute":
+        return min(events, key=lambda e: (e.minute(stoppage), e.real_time_utc, e.fixture_id))
+    if definition != "first_in_real_time":
+        raise ValueError(f"unknown Golden Goal definition {definition!r}")
+    return min(events, key=lambda e: (e.real_time_utc, e.minute(stoppage), e.fixture_id))

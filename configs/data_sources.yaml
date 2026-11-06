@@ -31,6 +31,33 @@ sources:
       - "AvgCH/AvgCD/AvgCA closing odds (stored, never used before kick-off)"
       - HS, AS, HST, AST, HxG, AxG (stored for later ablations)
 
+  skysports_news_previews:
+    name: Sky Sports public news (weekly predictions articles)
+    homepage: https://www.skysports.com/premier-league-news
+    use: >
+      Find the six fixtures a Super 6 round uses, from headings marked "PLAY SUPER 6!".
+      Only fixture names and kick-off times are extracted.
+    access: >
+      Honest User-Agent, robots.txt checked for every URL, at least 2 s between
+      requests, a handful of pages per run. Pages robots.txt disallows, or that refuse
+      the request, are skipped, never worked around.
+    licence_id: skysports-website-terms
+    licence_status: review_required
+    redistribution: none          # raw pages stay in data/raw/round_sources (gitignored)
+    verification: >
+      Cross-checked by round import (team resolution, exactly six fixtures, deadline = first
+      kick-off). The article URL is recorded in the round file for a person to check.
+
+  openfootball:
+    name: openfootball (england)
+    homepage: https://github.com/openfootball/england
+    base_url: https://raw.githubusercontent.com/openfootball/england/master
+    use: Goal minutes per match (Premier League from 2025-26) for the Golden Goal model.
+    licence_id: CC0-1.0
+    licence_status: public_domain
+    attribution: "Goal times from openfootball (CC0 1.0)"
+    access: Honest User-Agent, robots.txt checked, rate-limited; raw files kept locally.
+
   manual_round_file:
     name: Manually verified Super 6 round file
     licence_id: user-supplied

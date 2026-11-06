@@ -12,7 +12,7 @@ either of which would let post-cutoff information into a forecast.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
@@ -69,7 +69,7 @@ class FittedScoreModel(ABC):
         self.n_training_matches = view.n_results
         self.grid = grid
 
-    def predict(self, fixture: FixtureSpec, view: PointInTimeView) -> Prediction:
+    def _check(self, fixture: FixtureSpec, view: PointInTimeView) -> None:
         if view.cutoff < self.cutoff:
             raise LeakageError(
                 f"{self.name} was fitted at {self.cutoff} but asked to predict as of "
@@ -80,7 +80,21 @@ class FittedScoreModel(ABC):
                 f"{fixture.fixture_id} kicked off at {fixture.kickoff_utc}, not after the "
                 f"cutoff {view.cutoff}"
             )
+
+    def predict(self, fixture: FixtureSpec, view: PointInTimeView) -> Prediction:
+        self._check(fixture, view)
         return self._predict(fixture, view)
+
+    def predict_many(self, fixtures: Sequence[FixtureSpec], view: PointInTimeView
+                     ) -> list[Prediction]:
+        """Forecast several fixtures at one cutoff (models may batch for speed)."""
+        for fx in fixtures:
+            self._check(fx, view)
+        return self._predict_many(fixtures, view)
+
+    def _predict_many(self, fixtures: Sequence[FixtureSpec], view: PointInTimeView
+                      ) -> list[Prediction]:
+        return [self._predict(fx, view) for fx in fixtures]
 
     @abstractmethod
     def _predict(self, fixture: FixtureSpec, view: PointInTimeView) -> Prediction: ...
@@ -97,6 +111,8 @@ class FittedScoreModel(ABC):
 
 class ScoreModel(ABC):
     name: ClassVar[str]
+    #: Minimum days between refits in walk-forward replays (None: the replay default).
+    refit_every_days: ClassVar[float | None] = None
     #: Short human-readable description for reports and explanations.
     description: ClassVar[str] = ""
 
