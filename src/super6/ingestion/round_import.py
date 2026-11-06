@@ -81,10 +81,12 @@ class RoundImport:
     fixtures: list[ImportedFixture]
     warnings: list[str] = field(default_factory=list)
 
-    def to_spec_dict(self, rules_version: str, note: str) -> dict[str, Any]:
+    def to_spec_dict(self, rules_version: str, note: str, confirmed: bool = True
+                     ) -> dict[str, Any]:
         return {
             "round_id": self.round_id,
             "illustrative": False,
+            "confirmed": confirmed,
             "source_note": note,
             "deadline_utc": iso(self.deadline_utc),
             "rules_version": rules_version,
@@ -92,10 +94,11 @@ class RoundImport:
                           "kickoff_utc": iso(f.kickoff_utc)} for f in self.fixtures],
         }
 
-    def to_yaml(self, rules_version: str, note: str) -> str:
+    def to_yaml(self, rules_version: str, note: str, confirmed: bool = True) -> str:
         header = ("# Imported with `super6 round import`. Check it against the Super 6 app\n"
                   "# before relying on it, especially kick-off times marked as assumed.\n")
-        return header + yaml.safe_dump(self.to_spec_dict(rules_version, note), sort_keys=False)
+        return header + yaml.safe_dump(self.to_spec_dict(rules_version, note, confirmed),
+                                       sort_keys=False)
 
 
 def parse_fixture_text(text: str) -> list[ParsedPair]:

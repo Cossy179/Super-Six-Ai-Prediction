@@ -336,7 +336,13 @@ def round_import(ctx: click.Context, text: str | None, text_file: str | None,
     stamp = f"{datetime.now(UTC):%Y-%m-%d %H:%M} UTC"
     note = (f"{source_note} ({stamp})" if source_note
             else f"Imported from the Super 6 app matchups on {stamp}")
-    target.write_text(imported.to_yaml(rules.rules_version, note), encoding="utf-8")
+    confirmed = source_note is None  # pasted from the app = confirmed; fetched = not yet
+    target.write_text(imported.to_yaml(rules.rules_version, note, confirmed=confirmed),
+                      encoding="utf-8")
+    if not confirmed:
+        click.secho("These fixtures were found automatically and may be wrong. Check them in "
+                    f"the Super 6 app, then run `super6 round confirm {imported.round_id}`.\n"
+                    "Until then the forecast can't be locked.", fg="yellow")
     click.echo(f"wrote {target}")
     if run_predict:
         click.echo("")
@@ -381,6 +387,23 @@ def round_fetch(ctx: click.Context, round_number: int | None, round_date: str | 
     ctx.invoke(round_import, text="\n".join(report.lines), text_file=None,
                round_number=round_number, round_date=day.isoformat(), fetch=True,
                run_predict=run_predict, out_path=None, source_note=f"Found in: {sources}")
+
+
+@round_group.command("confirm")
+@click.argument("round_id")
+def round_confirm(round_id: str) -> None:
+    """Mark a fetched round's fixtures as checked against the Super 6 app."""
+    import yaml as yaml_mod
+
+    path = project_root() / "rounds" / f"{round_id}.yaml"
+    if not path.exists():
+        raise click.ClickException(f"no round file {path}")
+    data = yaml_mod.safe_load(path.read_text(encoding="utf-8"))
+    load_round(path)  # validate before changing anything
+    data["confirmed"] = True
+    path.write_text("# Fixtures confirmed against the Super 6 app.\n"
+                    + yaml_mod.safe_dump(data, sort_keys=False), encoding="utf-8")
+    click.echo(f"{round_id} confirmed; the next forecast can be locked")
 
 
 # --------------------------------------------------------------------------- cycle
@@ -440,6 +463,78 @@ def cycle(now_text: str | None, fetch_round: bool, lock_window_minutes: float,
                                "alerts": [a.__dict__ for a in alerts.emitted]}, indent=2))
     if alerts.has_errors:
         sys.exit(1)
+
+
+@main.command()
+@click.argument("text")
+@click.option("--date", "round_date", default=None,
+              help="Main match day (YYYY-MM-DD, UK). Default: the coming Saturday")
+@click.option("--model", "model_name", default=None, type=click.Choice(sorted(MODEL_CLASSES)))
+@click.option("--fetch/--no-fetch", default=True, help="Refresh upcoming fixtures and odds")
+def forecast(text: str, round_date: str | None, model_name: str | None, fetch: bool) -> None:
+    """Forecast any list of fixtures, e.g. a whole Premier League weekend. Nothing is saved.
+
+    TEXT uses the same format as `round import`, e.g. "Leeds vs Tottenham, Saturday 12.30pm;
+    Brighton vs Brentford, Sunday 2pm". This is not a Super 6 round: there is no six-fixture
+    check, no Golden Goal, and no audit record.
+    """
+    from datetime import date as date_cls
+
+    from super6.domain import FixtureSpec
+    from super6.ingestion.adapters.football_data_couk import fixture_key
+    from super6.ingestion.round_import import (
+        RoundImportError,
+        import_round,
+        next_saturday,
+        parse_fixture_text,
+    )
+    from super6.prediction.optimiser import Objective, choose_score
+    from super6.prediction.service import forecast_basis
+    from super6.storage.repositories import load_history, load_registry
+
+    rules = load_rules()
+    defaults = load_model_defaults()
+    leagues = set(pipeline.leagues_config()["competitions"])
+    day = (date_cls.fromisoformat(round_date) if round_date
+           else next_saturday(datetime.now(UK).date()))
+    try:
+        pairs = parse_fixture_text(text)
+        with session_scope(_engine()) as session:
+            if fetch:
+                pipeline.ingest_upcoming(session, Settings.from_env().data_dir / "raw",
+                                         log=lambda _: None)
+            history = load_history(session)
+            registry = load_registry(session, TeamRegistry.from_config())
+            imported = import_round(pairs, registry, history, day, known_competitions=leagues)
+    except RoundImportError as exc:
+        raise click.ClickException("\n  ".join(exc.problems)) from exc
+    now = datetime.now(UTC)
+    fixtures = sorted(
+        (FixtureSpec(fixture_key(f.competition, f.kickoff_utc.astimezone(UK).date(),
+                                 f.home_team, f.away_team),
+                     f.competition, f.home_team, f.away_team, f.kickoff_utc)
+         for f in imported.fixtures if f.kickoff_utc > now),
+        key=lambda f: (f.kickoff_utc, f.fixture_id))
+    skipped = len(imported.fixtures) - len(fixtures)
+    model = build_model(model_name or defaults["default_model"], defaults=defaults)
+    view = history.view(now)
+    preds = model.fit(view).predict_many(fixtures, view)
+    rows = []
+    for fx, pred in zip(fixtures, preds, strict=True):
+        pts, _ = choose_score(pred.distribution, Objective.POINTS, rules, 0)
+        jp, _ = choose_score(pred.distribution, Objective.JACKPOT, rules, 0)
+        o = pred.distribution.outcome_probabilities()
+        rows.append([fx.kickoff_utc.astimezone(UK).strftime("%a %H:%M"),
+                     f"{registry.name(fx.home_team)} v {registry.name(fx.away_team)}",
+                     pts.score, jp.score, _pct(jp.exact_probability),
+                     f"{_pct(o.home)}/{_pct(o.draw)}/{_pct(o.away)}",
+                     f"{pred.lam_home:.2f}/{pred.lam_away:.2f}", forecast_basis(pred)])
+    click.echo(_table(["kick-off (UK)", "fixture", "points", "jackpot", "P(jackpot pick)",
+                       "H/D/A", "xG h/a", "basis"], rows))
+    if skipped:
+        click.echo(f"\n{skipped} fixture(s) already kicked off and were skipped")
+    for w in imported.warnings:
+        click.secho(f"warning: {w}", fg="yellow")
 
 
 # --------------------------------------------------------------------------- runs

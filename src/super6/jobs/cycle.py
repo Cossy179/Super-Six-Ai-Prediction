@@ -306,7 +306,8 @@ def _fetch_round(saturday: date, deps: CycleDeps, history: MatchHistory,
     sources = ", ".join(a["url"] for a in found.articles if a["super6_matches"])
     path = deps.rounds_dir / f"{imported.round_id}.yaml"
     path.write_text(imported.to_yaml(rules.rules_version,
-                                     f"Found by `super6 cycle` in: {sources}"), encoding="utf-8")
+                                     f"Found by `super6 cycle` in: {sources}", confirmed=False),
+                    encoding="utf-8")
     alerts.emit("info", "ROUND_FETCHED", f"{imported.round_id}: {', '.join(found.lines)}",
                 imported.round_id)
     for w in imported.warnings:
@@ -347,7 +348,15 @@ def _before_deadline(engine: Engine, path: Path, spec: RoundSpec, history: Match
         out.run_id, out.status = run.id, run.status
         out.picks = _summary(fc, registry)
         in_window = now >= spec.deadline_utc - timedelta(minutes=cfg.lock_window_minutes)
-        if in_window and run.status in (RunStatus.VALIDATED.value, RunStatus.PUBLISHED.value):
+        if not spec.confirmed:
+            alerts.emit("error" if in_window else "warning", "ROUND_UNCONFIRMED",
+                        f"{spec.round_id}: fixtures were found automatically and are not "
+                        f"confirmed, so the forecast will not be locked. Check them in the "
+                        f"app, then `super6 round confirm {spec.round_id}` (or paste the "
+                        "right six with `super6 round import`)", spec.round_id)
+            out.actions.append("unconfirmed: not locking")
+        elif in_window and run.status in (RunStatus.VALIDATED.value,
+                                          RunStatus.PUBLISHED.value):
             from super6.prediction.service import lock_run
 
             try:

@@ -272,3 +272,28 @@ def test_updating_a_round_keeps_its_fixture_links(
             links = s.scalars(select(Super6RoundFixture.fixture_id).where(
                 Super6RoundFixture.round_id == "test-round-1")).all()
             assert sorted(links) == sorted(f.fixture_id for f in resolved.fixtures)
+
+
+def test_unconfirmed_rounds_cannot_be_locked(engine: Engine, rules: CompetitionRules,
+                                             league: tuple[MatchHistory, SyntheticTruth]) -> None:
+    from super6.storage.models import Super6Round
+
+    history, _ = league
+    reg = _setup(engine, history)
+    kickoff = (history.matches["kickoff_utc"].max() + pd.Timedelta(days=7)).to_pydatetime()
+    resolved = resolve_round(_spec(rules, kickoff, confirmed=False), reg, rules, {"SYN"})
+    assert any(w.startswith("ROUND_UNCONFIRMED") for w in resolved.warnings)
+    fc = forecast_round(history, resolved, kickoff - timedelta(hours=2), build_model("poisson"),
+                        rules, {"n_simulations": 1000})
+    with session_scope(engine) as s:
+        run = persist_forecast(s, resolved, fc, publish=True)
+        with pytest.raises(LockError, match="unconfirmed"):
+            lock_run(s, run.id, now=kickoff - timedelta(hours=1))
+    # Once confirmed (the round file is re-saved with confirmed: true), it can be locked.
+    confirmed = resolve_round(_spec(rules, kickoff), reg, rules, {"SYN"})
+    fc2 = forecast_round(history, confirmed, kickoff - timedelta(hours=1), build_model("poisson"),
+                         rules, {"n_simulations": 1000})
+    with session_scope(engine) as s:
+        run2 = persist_forecast(s, confirmed, fc2, publish=True)
+        lock_run(s, run2.id, now=kickoff - timedelta(minutes=30))
+        assert s.get(Super6Round, "test-round-1").spec["confirmed"] is True  # type: ignore[union-attr]

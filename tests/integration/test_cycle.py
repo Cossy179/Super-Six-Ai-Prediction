@@ -221,7 +221,7 @@ def test_missing_round_is_fetched_from_previews(engine: Engine, rules: Competiti
     out = run_cycle(engine, rules, _deps(world, lines=lines), sink, clock[0])
     assert any(a.code == "ROUND_FETCHED" for a in sink.emitted)
     assert len(list(world["rounds"].glob("*.yaml"))) == 1
-    assert out.rounds[0].actions == ["forecast saved and published"]
+    assert out.rounds[0].actions == ["forecast saved and published", "unconfirmed: not locking"]
     # Fewer than six found: warn, write nothing.
     for f in world["rounds"].glob("*.yaml"):
         f.unlink()
@@ -258,3 +258,16 @@ def test_alert_dedupe_and_webhook(tmp_path: Path) -> None:
     assert len(posted) == 1 and "ROUND_NOT_FOUND" in posted[0]["text"]
     lines = (tmp_path / "a.jsonl").read_text().splitlines()
     assert [json.loads(x)["code"] for x in lines] == ["ROUND_NOT_FOUND", "ROUND_LOCKED"]
+
+
+def test_fetched_rounds_are_not_locked_until_confirmed(engine: Engine, rules: CompetitionRules,
+                                                        world: dict[str, Any]) -> None:
+    ko = world["kickoff"]
+    lines = [f"{h} v {a}, Saturday 3pm" for h, a in PAIRS]
+    clock = [ko - timedelta(minutes=30)]  # already inside the lock window
+    sink = _sink(world, clock)
+    out = run_cycle(engine, rules, _deps(world, lines=lines), sink, clock[0]).rounds[0]
+    assert "unconfirmed: not locking" in out.actions and out.status != RunStatus.LOCKED.value
+    assert any(a.code == "ROUND_UNCONFIRMED" and a.severity == "error" for a in sink.emitted)
+    (path,) = world["rounds"].glob("*.yaml")
+    assert yaml.safe_load(path.read_text())["confirmed"] is False

@@ -441,6 +441,9 @@ def lock_run(session: Session, run_id: str, now: datetime | None = None) -> Pred
         raise LockError(f"no run {run_id}")
     rnd = session.get(Super6Round, run.round_id)
     assert rnd is not None
+    if not rnd.spec.get("confirmed", True):
+        raise LockError(f"round {rnd.id}'s fixtures are unconfirmed; check them against the app "
+                        f"and run `super6 round confirm {rnd.id}` first")
     if now > rnd.deadline_utc:
         raise LockError(f"deadline {iso(rnd.deadline_utc)} has passed; a locked record must be "
                         "made before the deadline")

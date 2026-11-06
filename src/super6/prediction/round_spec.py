@@ -51,6 +51,10 @@ class RoundSpec(BaseModel):
     deadline_utc: AwareDatetime
     rules_version: str
     illustrative: bool = False
+    # False when the fixtures were found automatically (e.g. in a preview article) and a
+    # person has not yet checked them against the Super 6 app. Unconfirmed rounds can be
+    # forecast but never locked.
+    confirmed: bool = True
     source_note: str | None = None
     fixtures: list[FixtureInput]
 
@@ -88,6 +92,10 @@ def resolve_round(spec: RoundSpec, registry: TeamRegistry, rules: CompetitionRul
             f"WRONG_FIXTURE_COUNT: {len(spec.fixtures)} (rules need {rules.fixtures_per_round})")
     if spec.illustrative:
         out.warnings.append("ILLUSTRATIVE_DATA_ONLY")
+    if not spec.confirmed:
+        out.warnings.append(
+            f"ROUND_UNCONFIRMED: fixtures were found automatically; check them in the app, "
+            f"then run `super6 round confirm {spec.round_id}`")
     for fx in spec.fixtures:
         try:
             home = registry.resolve(fx.home)
