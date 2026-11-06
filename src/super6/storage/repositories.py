@@ -30,6 +30,7 @@ from super6.storage.models import (
     Fixture,
     FixtureResult,
     FixtureStat,
+    GoalEvent,
     MarketSnapshot,
     ModelRegistryEntry,
     PredictionRun,
@@ -269,7 +270,9 @@ def load_history(session: Session, competitions: Iterable[str] | None = None) ->
     odds = odds[ODDS_COLUMNS]
     for col in ("over25", "under25"):
         odds[col] = pd.to_numeric(odds[col], errors="coerce")
-    return MatchHistory(matches, odds)
+    goals = load_goal_events(session)
+    goals = goals.loc[goals["fixture_id"].isin(matches["fixture_id"])]
+    return MatchHistory(matches, odds, goals)
 
 
 # --------------------------------------------------------------------------- models & runs
@@ -323,3 +326,87 @@ def transition_run(session: Session, run: PredictionRun, new_status: RunStatus,
     elif new_status is RunStatus.SETTLED:
         run.settled_at = now
     session.flush()
+
+
+# --------------------------------------------------------------------------- goal events
+@dataclass
+class GoalIngestStats:
+    uri: str
+    skipped: bool = False
+    matches: int = 0
+    goals_new: int = 0
+    issues: int = 0
+
+
+def ingest_goal_events(session: Session, *, source: str, uri: str, text: str, checksum: str,
+                       retrieved_at: datetime, local_path: str | None, competition: str,
+                       season_label: str, registry: TeamRegistry, licence_id: str
+                       ) -> GoalIngestStats:
+    """Store goal times from an openfootball league file (idempotent per file version).
+
+    A match is rejected if its goals don't add up to its score, if it can't be matched to a
+    canonical fixture, or if its score disagrees with the stored result.
+    """
+    from super6.ingestion.adapters.openfootball import fixture_id_for, parse_league_text
+    from super6.ingestion.canonicalize import UnknownTeamError
+
+    stats = GoalIngestStats(uri)
+    if session.scalar(select(SourceSnapshot).where(
+            SourceSnapshot.source == source, SourceSnapshot.uri == uri,
+            SourceSnapshot.checksum == checksum)) is not None:
+        stats.skipped = True
+        return stats
+    parsed = parse_league_text(text, int(season_label[:4]))
+    snapshot = SourceSnapshot(source=source, uri=uri, retrieved_at=retrieved_at,
+                              checksum=checksum, licence_id=licence_id, local_path=local_path,
+                              rows_read=len(parsed.matches) + len(parsed.problems),
+                              rows_accepted=0, quality_status="ok")
+    session.add(snapshot)
+    session.flush()
+
+    def issue(code: str, detail: str) -> None:
+        session.add(DataQualityIssue(source_snapshot_id=snapshot.id, severity="quarantine",
+                                     code=code, detail=detail[:1024], record_ref=uri[:512]))
+        stats.issues += 1
+
+    for problem in parsed.problems:
+        issue("GOALS_DONT_MATCH_SCORE", problem)
+    have = set(session.scalars(select(GoalEvent.fixture_id).where(GoalEvent.source == source)))
+    for match in parsed.matches:
+        try:
+            fid = fixture_id_for(competition, match, registry)
+        except UnknownTeamError as exc:
+            issue("GOAL_TEAM_UNKNOWN", str(exc.args[0]))
+            continue
+        result = session.scalar(select(FixtureResult).where(FixtureResult.fixture_id == fid))
+        if session.get(Fixture, fid) is None:
+            issue("GOAL_FIXTURE_NOT_FOUND", f"{fid} not in fixtures")
+            continue
+        if result is not None and (result.home_goals, result.away_goals) != (
+                match.home_goals, match.away_goals):
+            issue("GOAL_SCORE_CONFLICT", f"{fid}: results say {result.home_goals}-"
+                  f"{result.away_goals}, goal list says {match.home_goals}-{match.away_goals}")
+            continue
+        stats.matches += 1
+        if fid in have:
+            continue
+        for g in match.goals:
+            session.add(GoalEvent(fixture_id=fid, source=source, period=g.period,
+                                  match_minute=g.minute, stoppage_minute=g.stoppage,
+                                  team_side=g.side, event_utc=None))
+            stats.goals_new += 1
+        have.add(fid)
+    snapshot.rows_accepted = stats.matches
+    snapshot.quality_status = "issues" if stats.issues else "ok"
+    session.flush()
+    return stats
+
+
+def load_goal_events(session: Session, source: str | None = None) -> pd.DataFrame:
+    stmt = select(GoalEvent.fixture_id, GoalEvent.source, GoalEvent.period,
+                  GoalEvent.match_minute, GoalEvent.stoppage_minute, GoalEvent.team_side)
+    if source is not None:
+        stmt = stmt.where(GoalEvent.source == source)
+    return pd.DataFrame(session.execute(stmt).all(),
+                        columns=["fixture_id", "source", "period", "match_minute",
+                                 "stoppage_minute", "team_side"])

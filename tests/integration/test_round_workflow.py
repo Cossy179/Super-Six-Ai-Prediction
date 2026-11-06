@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import Engine, delete, select, update
 from sqlalchemy.exc import DBAPIError
 
-from super6.features.point_in_time import MatchHistory
+from super6.features.point_in_time import GOAL_COLUMNS, MatchHistory
 from super6.ingestion.canonicalize import TeamRegistry
 from super6.models import build_model
 from super6.models.base import CutoffAfterKickoffError
@@ -77,7 +77,7 @@ def test_full_round_lifecycle(engine: Engine, rules: CompetitionRules,
     assert "RULES_UNVERIFIED" not in fc.warnings
     payload = forecast_to_json(fc, reg)
     assert len(payload["modes"]["points"]["fixtures"]) == 6
-    assert payload["golden_goal"]["method"] == "uniform-hazard-poisson-simulation"
+    assert payload["golden_goal"]["method"] == "uniform-hazard"
     # Deterministic: same inputs → same fingerprint and probabilities.
     again = forecast_round(history, resolved, cutoff, model, rules, {"n_simulations": 5000})
     assert again.run_id == fc.run_id
@@ -297,3 +297,34 @@ def test_unconfirmed_rounds_cannot_be_locked(engine: Engine, rules: CompetitionR
         run2 = persist_forecast(s, confirmed, fc2, publish=True)
         lock_run(s, run2.id, now=kickoff - timedelta(minutes=30))
         assert s.get(Super6Round, "test-round-1").spec["confirmed"] is True  # type: ignore[union-attr]
+
+
+def test_empirical_golden_goal_profile_uses_only_published_goals(
+        rules: CompetitionRules, league: tuple[MatchHistory, SyntheticTruth]) -> None:
+    history, _ = league
+    reg = TeamRegistry()
+    for t in sorted(set(history.matches["home_team"])):
+        reg.add_team(t, t)
+    finished = history.matches.dropna(subset=["home_goals"])
+    rows: list[tuple[str, int, int, float | None, str]] = []
+    for r in finished.itertuples():
+        rows += [(r.fixture_id, 2, 60 + k, None, "home") for k in range(int(r.home_goals))]
+        rows += [(r.fixture_id, 1, 10 + k, None, "away") for k in range(int(r.away_goals))]
+    rows.append(("not-yet-played", 1, 1, None, "home"))  # must never be seen
+    goals = pd.DataFrame(rows, columns=GOAL_COLUMNS)
+    hist = MatchHistory(history.matches, history.odds, goals)
+    kickoff = (history.matches["kickoff_utc"].max() + pd.Timedelta(days=7)).to_pydatetime()
+    resolved = resolve_round(_spec(rules, kickoff), reg, rules, {"SYN"})
+    cutoff = kickoff - timedelta(hours=2)
+    model = build_model("dixon_coles")
+    fc = forecast_round(hist, resolved, cutoff, model, rules, {"profile": "empirical"})
+    assert fc.golden_goal is not None and fc.golden_goal.method == "empirical-hazard"
+    assert "GOLDEN_GOAL_BASELINE_ONLY" not in fc.warnings
+    assert len(hist.view(cutoff).goal_events) == len(goals) - 1
+    uniform = forecast_round(hist, resolved, cutoff, model, rules, {"profile": "uniform"})
+    assert uniform.golden_goal is not None and uniform.golden_goal.method == "uniform-hazard"
+    assert uniform.run_id != fc.run_id  # the profile is part of the run's identity
+    # Too few published goal minutes: falls back to uniform and says so.
+    early = forecast_round(MatchHistory(history.matches, history.odds, goals.head(100)),
+                           resolved, cutoff, model, rules, {"profile": "empirical"})
+    assert any(w.startswith("GOLDEN_GOAL_PROFILE_FALLBACK") for w in early.warnings)

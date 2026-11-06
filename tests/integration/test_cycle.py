@@ -23,6 +23,7 @@ from super6.storage.models import (
     Competition,
     Evaluation,
     FixtureResult,
+    GoalEvent,
     PredictionRun,
     RunStatus,
     Super6Round,
@@ -116,6 +117,12 @@ def test_full_round_from_forecast_to_settlement(engine: Engine, rules: Competiti
         for i, rf in enumerate(rnd.fixtures):
             s.add(FixtureResult(fixture_id=rf.fixture_id, source="test", home_goals=i % 3,
                                 away_goals=1, result_available_at=ko + timedelta(hours=2)))
+            # Goal minutes: each match's away goal at 11 + i, home goals after the break.
+            s.add(GoalEvent(fixture_id=rf.fixture_id, source="test", period=1,
+                            match_minute=11 + i, stoppage_minute=None, team_side="away"))
+            for k in range(i % 3):
+                s.add(GoalEvent(fixture_id=rf.fixture_id, source="test", period=2,
+                                match_minute=50 + k, stoppage_minute=None, team_side="home"))
     clock[0] = ko + timedelta(hours=4)
     settled = run_cycle(engine, rules, deps, sink, clock[0]).rounds[0]
     assert "settled" in settled.actions and settled.status == RunStatus.SETTLED.value
@@ -127,7 +134,16 @@ def test_full_round_from_forecast_to_settlement(engine: Engine, rules: Competiti
     with session_scope(engine) as s:
         assert s.scalar(select(func.count(Evaluation.id))) == n_evals
     assert not sink.has_errors
-    # Later, the player records the official Golden Goal minute from the app.
+
+    def gg_eval(metric: str) -> float | None:
+        with session_scope(engine) as s:
+            return s.scalar(select(Evaluation.value).where(
+                Evaluation.run_id == settled.run_id, Evaluation.mode == "golden_goal",
+                Evaluation.metric == metric))
+
+    # Settled automatically from the stored goal minutes: the earliest is minute 11.
+    assert gg_eval("actual_minute") == 11 and gg_eval("from_goal_events") == 1
+    # Later, the player records the official Golden Goal minute, which takes precedence.
     from super6.prediction.service import settle_round
 
     with session_scope(engine) as s:
@@ -135,6 +151,7 @@ def test_full_round_from_forecast_to_settlement(engine: Engine, rules: Competiti
         out = settle_round(s, "test-r1", rules, golden_goal_minute=7)
         gg = next(r for r in out if r.run_id == locked_run).metrics["golden_goal"]
         assert gg["actual_minute"] == 7 and gg["abs_error"] == abs(gg["predicted_minute"] - 7)
+    assert gg_eval("actual_minute") == 7 and gg_eval("from_goal_events") == 0
     with session_scope(engine) as s:
         assert s.scalar(select(func.count(Evaluation.id)).where(
             Evaluation.mode == "golden_goal")) >= 3

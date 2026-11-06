@@ -139,6 +139,40 @@ def data_upcoming(days: int, competitions: str, fetch: bool) -> None:
              iso(f.kickoff_utc), f.source] for f in rows]))
 
 
+@data.command("goals")
+@click.option("--competitions", default="E0", show_default=True)
+@click.option("--first-season", default="2025-26", show_default=True,
+              help="openfootball has Premier League goal minutes from 2025-26")
+def data_goals(competitions: str, first_season: str) -> None:
+    """Download and store goal minutes from openfootball (CC0) for the Golden Goal model."""
+    from super6.ingestion.adapters import openfootball as of
+    from super6.ingestion.round_sources import PoliteFetcher
+    from super6.storage.repositories import ingest_goal_events, load_registry
+
+    settings = Settings.from_env()
+    fetcher = PoliteFetcher(raw_dir=settings.data_dir / "raw" / of.SOURCE)
+    current = fdc.season_for_date(datetime.now(UK).date())
+    with session_scope(_engine()) as session:
+        registry = load_registry(session, TeamRegistry.from_config())
+        for comp in competitions.split(","):
+            for season in fdc.seasons_between(first_season, current):
+                url = of.season_path(comp, season)
+                try:
+                    page = fetcher.get(url)
+                except Exception as exc:
+                    click.echo(f"skipped {url}: {exc}")
+                    continue
+                st = ingest_goal_events(
+                    session, source=of.SOURCE, uri=url, text=page.text, checksum=page.checksum,
+                    retrieved_at=page.retrieved_at,
+                    local_path=str(page.local_path) if page.local_path else None,
+                    competition=comp, season_label=season, registry=registry,
+                    licence_id="CC0-1.0")
+                click.echo(f"{comp} {season}: " + ("unchanged" if st.skipped else
+                           f"{st.matches} matches with goal times, +{st.goals_new} goals, "
+                           f"{st.issues} issues"))
+
+
 @data.command("status")
 def data_status() -> None:
     """Coverage, freshness and data-quality summary."""
@@ -622,7 +656,8 @@ def runs_lock(run_id: str) -> None:
 @click.argument("round_id")
 @click.option("--allow-missing", is_flag=True, help="Score settled fixtures even if some are void")
 @click.option("--golden-goal-minute", type=int, default=None,
-              help="The official Golden Goal minute from the app (0 = no goals)")
+              help="The official Golden Goal minute from the app (0 = no goals). Without "
+                   "it, the minute is worked out from stored goal minutes when possible")
 def settle(round_id: str, allow_missing: bool, golden_goal_minute: int | None) -> None:
     """Score a round's runs against ingested results (run `data ingest` first)."""
     from super6.prediction.service import settle_round
@@ -638,6 +673,14 @@ def settle(round_id: str, allow_missing: bool, golden_goal_minute: int | None) -
         click.echo(f"{s.run_id} [{s.status}]: points mode {m['points']['points']:g} pts "
                    f"({m['points']['exact_hits']:g} exact), jackpot mode "
                    f"{m['jackpot']['points']:g} pts ({m['jackpot']['exact_hits']:g} exact)")
+        g = m.get("golden_goal")
+        if g:
+            source = "goal minutes" if g["from_goal_events"] else "official"
+            click.echo(f"  Golden Goal: predicted {g['predicted_minute']:g}, actual "
+                       f"{g['actual_minute']:g} ({source}), error {g['abs_error']:g}")
+        else:
+            click.echo("  Golden Goal: not settled (pass --golden-goal-minute, or run "
+                       "`data goals` once goal minutes are published)")
 
 
 # --------------------------------------------------------------------------- analysis

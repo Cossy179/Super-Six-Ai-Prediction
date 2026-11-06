@@ -2,7 +2,8 @@
 
 Models never see the full history. They receive a ``PointInTimeView`` that exposes only
 
-* results whose ``result_available_at <= cutoff`` (never the target fixture's result), and
+* results whose ``result_available_at <= cutoff`` (never the target fixture's result),
+* goal minutes of those results only, and
 * market odds whose ``available_at <= cutoff``.
 
 This is the single choke point that enforces ``feature_available_at <= prediction_cutoff_at``.
@@ -48,6 +49,9 @@ ODDS_COLUMNS = [
     "under25",
 ]
 
+# Goal minutes (Golden Goal model). Like statistics, they become visible with the result.
+GOAL_COLUMNS = ["fixture_id", "period", "match_minute", "stoppage_minute", "team_side"]
+
 
 class LeakageError(RuntimeError):
     """Information from after the prediction cutoff reached a model."""
@@ -61,12 +65,21 @@ def empty_odds_frame() -> pd.DataFrame:
     return frame
 
 
+def empty_goals_frame() -> pd.DataFrame:
+    frame = pd.DataFrame({c: pd.Series(dtype="int64") for c in GOAL_COLUMNS})
+    frame["fixture_id"] = pd.Series(dtype="object")
+    frame["team_side"] = pd.Series(dtype="object")
+    frame["stoppage_minute"] = pd.Series(dtype="float64")
+    return frame
+
+
 @dataclass
 class MatchHistory:
-    """Canonical matches plus timestamped odds snapshots (all timestamps UTC)."""
+    """Canonical matches, timestamped odds snapshots and goal minutes (timestamps UTC)."""
 
     matches: pd.DataFrame
     odds: pd.DataFrame = field(default_factory=empty_odds_frame)
+    goals: pd.DataFrame = field(default_factory=empty_goals_frame)
 
     def __post_init__(self) -> None:
         missing = [c for c in MATCH_COLUMNS if c not in self.matches.columns]
@@ -94,6 +107,10 @@ class MatchHistory:
         o = self.odds.copy()
         o["available_at"] = pd.to_datetime(o["available_at"], utc=True)
         self.odds = o.sort_values(["fixture_id", "available_at"]).reset_index(drop=True)
+        missing = [c for c in GOAL_COLUMNS if c not in self.goals.columns]
+        if missing:
+            raise ValueError(f"goal history missing columns: {missing}")
+        self.goals = self.goals[GOAL_COLUMNS].reset_index(drop=True)
         self._odds_groups: dict[str, pd.DataFrame] | None = None
 
     def odds_for(self, fixture_id: str) -> pd.DataFrame | None:
@@ -111,7 +128,7 @@ class MatchHistory:
         new_odds = self.odds if odds is None or odds.empty else pd.concat(
             [self.odds, odds[ODDS_COLUMNS]], ignore_index=True
         )
-        return MatchHistory(new_matches, new_odds)
+        return MatchHistory(new_matches, new_odds, self.goals)
 
     def view(self, cutoff: datetime | pd.Timestamp | str) -> PointInTimeView:
         return PointInTimeView(self, cutoff)
@@ -139,6 +156,13 @@ class PointInTimeView:
     def results(self) -> pd.DataFrame:
         """Finished matches whose results were public at the cutoff (a copy)."""
         return self._results.copy()
+
+    @property
+    def goal_events(self) -> pd.DataFrame:
+        """Goal minutes of the matches in ``results`` only (a copy)."""
+        goals = self._history.goals
+        return goals.loc[goals["fixture_id"].isin(self._results["fixture_id"])].reset_index(
+            drop=True)
 
     @property
     def n_results(self) -> int:

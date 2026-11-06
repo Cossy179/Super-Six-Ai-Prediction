@@ -80,7 +80,13 @@ models:
     fitted_on: "2022-07-01/2023-07-01"
 
 golden_goal:
-  method: uniform_hazard_simulation
+  # uniform: constant scoring rate. empirical: goal-time profile fitted to stored goal
+  # minutes (`super6 data goals`) published before the cutoff; falls back to uniform with
+  # fewer than 400 goals. Decided by experiment 006.
+  profile: uniform
+  bin_minutes: 5
+  empirical_first_half_stoppage_cells: 3
+  empirical_second_half_stoppage_cells: 7
   n_simulations: 50000
   seed: 20261105
   first_half_stoppage_minutes: 2.0

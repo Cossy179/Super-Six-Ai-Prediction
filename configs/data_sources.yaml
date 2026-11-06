@@ -48,6 +48,16 @@ sources:
       Cross-checked by round import (team resolution, exactly six fixtures, deadline = first
       kick-off). The article URL is recorded in the round file for a person to check.
 
+  openfootball:
+    name: openfootball (england)
+    homepage: https://github.com/openfootball/england
+    base_url: https://raw.githubusercontent.com/openfootball/england/master
+    use: Goal minutes per match (Premier League from 2025-26) for the Golden Goal model.
+    licence_id: CC0-1.0
+    licence_status: public_domain
+    attribution: "Goal times from openfootball (CC0 1.0)"
+    access: Honest User-Agent, robots.txt checked, rate-limited; raw files kept locally.
+
   manual_round_file:
     name: Manually verified Super 6 round file
     licence_id: user-supplied

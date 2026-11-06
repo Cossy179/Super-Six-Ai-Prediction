@@ -21,7 +21,9 @@ from sqlalchemy.orm import Session
 from super6.config import code_version
 from super6.domain import FixtureSpec, FixtureStatus, MarketOdds
 from super6.evaluation.metrics import actual_result, exact_log_loss, ranked_probability_score
-from super6.features.point_in_time import MatchHistory, empty_odds_frame
+from super6.features.point_in_time import GOAL_COLUMNS, MatchHistory, empty_odds_frame
+from super6.golden_goal.actual import first_goal_minutes, round_golden_goal
+from super6.golden_goal.profile import profile_from_config
 from super6.golden_goal.simulate import GoldenGoalFixture, GoldenGoalForecast, simulate_golden_goal
 from super6.ingestion.canonicalize import TeamRegistry
 from super6.models.base import CutoffAfterKickoffError, Prediction, ScoreModel
@@ -40,6 +42,7 @@ from super6.storage.models import (
     Fixture,
     FixtureForecast,
     FixtureResult,
+    GoalEvent,
     GoldenGoalPrediction,
     PredictionRun,
     Recommendation,
@@ -160,33 +163,30 @@ def forecast_round(
     picks = {obj: choose_round(dists, obj, rules) for obj in Objective}
     gg: GoldenGoalForecast | None = None
     gg_cfg = dict(golden_goal_config or {})
+    profile_id: dict[str, Any] = {}
     if rules.golden_goal_enabled and predictions:
-        gg = simulate_golden_goal(
-            [GoldenGoalFixture(fx.fixture_id, fx.kickoff_utc, p.lam_home + p.lam_away)
-             for fx, p in zip(resolved.fixtures, predictions, strict=True)],
-            rules,
-            n_simulations=int(gg_cfg.get("n_simulations", 50_000)),
-            seed=int(gg_cfg.get("seed", 20261105)),
-            first_half_stoppage_minutes=float(gg_cfg.get("first_half_stoppage_minutes", 2.0)),
-            second_half_stoppage_minutes=float(gg_cfg.get("second_half_stoppage_minutes", 5.0)),
-            half_time_break_minutes=float(gg_cfg.get("half_time_break_minutes", 15.0)),
-        )
-        warnings.append("GOLDEN_GOAL_BASELINE_ONLY")
+        profile, profile_warnings = profile_from_config(gg_cfg, view.goal_events)
+        warnings.extend(profile_warnings)
+        profile_id = {"method": profile.method, "n_goals": profile.n_goals}
+        gg_fixtures = [GoldenGoalFixture(fx.fixture_id, fx.kickoff_utc, p.lam_home + p.lam_away)
+                       for fx, p in zip(resolved.fixtures, predictions, strict=True)]
+
+        def run_gg(r: CompetitionRules) -> GoldenGoalForecast:
+            return simulate_golden_goal(
+                gg_fixtures, r,
+                n_simulations=int(gg_cfg.get("n_simulations", 50_000)),
+                seed=int(gg_cfg.get("seed", 20261105)),
+                half_time_break_minutes=float(gg_cfg.get("half_time_break_minutes", 15.0)),
+                profile=profile,
+            )
+
+        gg = run_gg(rules)
+        if profile.method == "uniform-hazard":
+            warnings.append("GOLDEN_GOAL_BASELINE_ONLY")
         if len({fx.kickoff_utc for fx in resolved.fixtures}) > 1:
             other = ("first_in_real_time" if rules.golden_goal_first_goal ==
                      "earliest_match_minute" else "earliest_match_minute")
-            alt = simulate_golden_goal(
-                [GoldenGoalFixture(fx.fixture_id, fx.kickoff_utc, p.lam_home + p.lam_away)
-                 for fx, p in zip(resolved.fixtures, predictions, strict=True)],
-                rules.model_copy(update={"golden_goal_first_goal": other}),
-                n_simulations=int(gg_cfg.get("n_simulations", 50_000)),
-                seed=int(gg_cfg.get("seed", 20261105)),
-                first_half_stoppage_minutes=float(
-                    gg_cfg.get("first_half_stoppage_minutes", 2.0)),
-                second_half_stoppage_minutes=float(
-                    gg_cfg.get("second_half_stoppage_minutes", 5.0)),
-                half_time_break_minutes=float(gg_cfg.get("half_time_break_minutes", 15.0)),
-            )
+            alt = run_gg(rules.model_copy(update={"golden_goal_first_goal": other}))
             if alt.minute != gg.minute:
                 warnings.append(
                     f"GOLDEN_GOAL_STAGGERED_KICKOFFS: minute {gg.minute} assumes "
@@ -202,6 +202,7 @@ def forecast_round(
         "grid": model.grid.__dict__,
         "rules": rules.model_dump(mode="json"),
         "golden_goal": gg_cfg,
+        "golden_goal_profile": profile_id,
         "cutoff": cutoff_ts.isoformat(),
         "code_version": version,
     })
@@ -467,15 +468,32 @@ class Settlement:
     metrics: dict[str, dict[str, float]]
 
 
+def _golden_goal_from_events(session: Session, results: Mapping[str, tuple[int, int]],
+                             rules: CompetitionRules) -> int | None:
+    """The round's Golden Goal from stored goal minutes, or None if it can't be known."""
+    if rules.golden_goal_first_goal != "earliest_match_minute":
+        return None  # needs wall-clock goal times, which no stored source has
+    rows = session.execute(select(GoalEvent.fixture_id, GoalEvent.period, GoalEvent.match_minute,
+                                  GoalEvent.stoppage_minute, GoalEvent.team_side)
+                           .where(GoalEvent.fixture_id.in_(list(results)))).all()
+    goals = pd.DataFrame(rows, columns=GOAL_COLUMNS)
+    first = first_goal_minutes(goals, results, rules.golden_goal_stoppage_time)
+    if first.uncovered:
+        return None
+    return round_golden_goal(first.minutes, rules.golden_goal_no_goal_minute)
+
+
 def settle_round(session: Session, round_id: str, rules: CompetitionRules,
                  allow_missing: bool = False, golden_goal_minute: int | None = None
                  ) -> list[Settlement]:
     """Score every non-blocked run of a round; move its locked run to SETTLED.
 
     ``golden_goal_minute`` is the official Golden Goal answer, which the player can read
-    in the app after the round (0 if there were no goals). When given, each run's Golden
-    Goal error is recorded too. It can be added in a later call for an already-settled
-    round.
+    in the app after the round (0 if there were no goals). When it is not given, it is
+    worked out from stored goal minutes, if every fixture has a result and is covered
+    (0-0, or goal minutes matching the score), and the rules use the earliest match
+    minute. Each run's Golden Goal error is then recorded too. It can be added in a later
+    call for an already-settled round.
     """
     if golden_goal_minute is not None and not 0 <= golden_goal_minute <= 90:
         raise ValueError("the Golden Goal minute must be between 0 and 90")
@@ -488,6 +506,10 @@ def settle_round(session: Session, round_id: str, rules: CompetitionRules,
                    FixtureResult.fixture_id.in_(fixture_ids)).order_by(FixtureResult.recorded_at))
                if r.fixture_id}
     missing = [f for f in fixture_ids if f not in results]
+    gg_source = "official" if golden_goal_minute is not None else None
+    if golden_goal_minute is None and not missing:
+        golden_goal_minute = _golden_goal_from_events(session, results, rules)
+        gg_source = "goal_events" if golden_goal_minute is not None else None
     out: list[Settlement] = []
     runs = session.scalars(select(PredictionRun).where(
         PredictionRun.round_id == round_id,
@@ -529,14 +551,18 @@ def settle_round(session: Session, round_id: str, rules: CompetitionRules,
         if golden_goal_minute is not None and gg is not None:
             metrics["golden_goal"] = {"actual_minute": float(golden_goal_minute),
                                       "predicted_minute": float(gg.minute),
-                                      "abs_error": float(abs(gg.minute - golden_goal_minute))}
-        have = {(e.mode, e.metric) for e in session.scalars(
+                                      "abs_error": float(abs(gg.minute - golden_goal_minute)),
+                                      "from_goal_events": float(gg_source == "goal_events")}
+        have = {(e.mode, e.metric): e for e in session.scalars(
             select(Evaluation).where(Evaluation.run_id == run.id))}
         for group, vals in metrics.items():
             for metric, value in vals.items():
-                if (group, metric) not in have:
+                existing = have.get((group, metric))
+                if existing is None:
                     session.add(Evaluation(run_id=run.id, mode=group, metric=metric,
                                            value=value))
+                elif group == "golden_goal" and gg_source == "official":
+                    existing.value = value  # the official answer replaces a derived one
         if run.status == RunStatus.LOCKED.value:
             transition_run(session, run, RunStatus.SETTLED)
         out.append(Settlement(run.id, run.status, len(fixture_ids) - len(missing), missing,

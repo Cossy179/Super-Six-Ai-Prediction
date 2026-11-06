@@ -176,7 +176,7 @@ class FixtureResult(Base):
 
 
 class GoalEvent(Base):
-    """Goal timings for Golden Goal training/settlement (needs a licensed event feed)."""
+    """Goal timings for Golden Goal modelling and settlement (openfootball, CC0)."""
 
     __tablename__ = "goal_events"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
