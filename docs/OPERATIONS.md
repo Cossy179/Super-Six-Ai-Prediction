@@ -41,6 +41,23 @@ never in the repository.
 - Locking is refused after the deadline, for a second run in the same round, or for a run
   that is not VALIDATED/PUBLISHED.
 
+## Getting each round's fixtures
+
+1. `super6 round fetch --round N` reads Sky Sports' public news listing pages, follows this
+   week's predictions articles, and extracts the headings marked "PLAY SUPER 6!".
+   - It sends an honest User-Agent, checks robots.txt for every URL, leaves at least 2 s
+     between requests, and fetches a handful of pages per run.
+   - Blocked or disallowed pages are skipped, never worked around.
+   - Raw pages are kept in `data/raw/round_sources/` (gitignored) for provenance.
+2. If it doesn't find exactly six, nothing is written. Paste the six from the app with
+   `super6 round import "Home v Away, ..."`.
+3. Either way, the round is checked: team names must resolve, there must be six fixtures,
+   and the deadline is the first kick-off. The round file records where the fixtures
+   came from; open it and compare with the app.
+
+Never log in to the Super 6 site or call its internal API from the tool; there is no
+authorised access.
+
 ## Replaying real Super 6 rounds
 
 Add verified historical rounds as round files with `illustrative: false`, for example in

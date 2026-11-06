@@ -72,7 +72,7 @@ def test_fills_from_provider_list_and_infers_the_rest(rules: CompetitionRules) -
     assert mu.source == "provider_fixture_list"
     assert mu.kickoff_utc == datetime(2026, 11, 7, 17, 30, tzinfo=UTC)
     assert any("provider lists 17:30" in w for w in imp.warnings)  # user said 15:00
-    assert by_home["fulham"].source == "inferred" and by_home["fulham"].competition == "E0"
+    assert by_home["fulham"].source == "assumed" and by_home["fulham"].competition == "E0"
     assert by_home["wrexham"].competition == "E1"
     assert sum(w.startswith("KICKOFF_ASSUMED") for w in imp.warnings) == 2
     # Deadline is the first kick-off: the two inferred games at 15:00 UK (= UTC in Nov).
@@ -95,6 +95,35 @@ def test_reports_unknown_teams_and_unclear_competitions() -> None:
     assert ok.fixtures[0].competition == "E0"
 
 
+def test_parses_days_and_12_hour_times() -> None:
+    pairs = parse_fixture_text(
+        "Arsenal vs Hull, Saturday 3pm, Crystal Palace vs Liverpool, Sunday 2pm\n"
+        "Man Utd v Aston Villa Sun 4.30pm; Nottingham Forest vs Man City, Saturday 5.30pm")
+    got = [(p.home, p.away, p.weekday, p.local_time) for p in pairs]
+    assert got == [("Arsenal", "Hull", 5, (15, 0)), ("Crystal Palace", "Liverpool", 6, (14, 0)),
+                   ("Man Utd", "Aston Villa", 6, (16, 30)),
+                   ("Nottingham Forest", "Man City", 5, (17, 30))]
+
+
+def test_sunday_fixtures_land_on_sunday() -> None:
+    imp = import_round(parse_fixture_text("Fulham v Newcastle, Sunday 2pm"), _registry(),
+                       _history(), SAT, known_competitions={"E0", "E1"})
+    assert imp.fixtures[0].kickoff_utc == datetime(2026, 11, 8, 14, 0, tzinfo=UTC)
+    assert not any(w.startswith("KICKOFF_ASSUMED") for w in imp.warnings)
+
+
 def test_next_saturday() -> None:
     assert next_saturday(date(2026, 11, 6)) == SAT
     assert next_saturday(SAT) == SAT
+
+
+def test_round_file_fixtures_are_not_mistaken_for_provider_listings() -> None:
+    h = _history()
+    m = h.matches.copy()
+    m["fixture_source"] = "football_data_couk"
+    m.loc[m["fixture_id"] == "E0-20261107-man-united-aston-villa", "fixture_source"] = \
+        "round_file"
+    imp = import_round(parse_fixture_text("Man Utd v Aston Villa, Sunday 4.30pm"), _registry(),
+                       MatchHistory(m), SAT, known_competitions={"E0", "E1"})
+    assert imp.fixtures[0].source == "text"
+    assert imp.fixtures[0].kickoff_utc == datetime(2026, 11, 8, 16, 30, tzinfo=UTC)

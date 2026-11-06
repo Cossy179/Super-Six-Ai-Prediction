@@ -61,6 +61,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "migrations/**" = ["E501"]
+"tests/unit/test_round_sources.py" = ["E501"]  # synthetic HTML fixtures
 
 [tool.mypy]
 python_version = "3.12"

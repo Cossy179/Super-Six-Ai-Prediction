@@ -32,13 +32,19 @@ from super6.features.point_in_time import MatchHistory
 from super6.ingestion.canonicalize import TeamRegistry, UnknownTeamError
 from super6.timeutil import UK, iso
 
-_SPLIT = re.compile(r"[\n;,]+")
+_DAY = r"(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*"
+_TIME = r"\d{1,2}[:.]\d{2}\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm)"
+# Commas separate matchups, except a comma that introduces a day or time
+# ("Crystal Palace vs Liverpool, Sunday 2pm").
+_SPLIT = re.compile(rf"[\n;]+|,(?!\s*(?:{_DAY}\b|(?:{_TIME})\b))", re.IGNORECASE)
 _PAIR = re.compile(
     r"^\s*(?:\d+\s*[.)]\s*)?(?P<home>.+?)\s+(?:v|vs|v\.|vs\.|versus|-|–|—)\s+(?P<away>.+?)"
-    r"(?:\s*\((?P<comp>[A-Z]{1,3}\d?)\))?(?:\s+(?P<time>\d{1,2}[:.]\d{2}))?"
+    r"(?:\s*\((?P<comp>[A-Z]{1,3}\d?)\))?"
+    rf"(?:\s*,?\s*(?P<day>{_DAY}))?(?:\s*,?\s*(?P<time>{_TIME}))?"
     r"(?:\s*\((?P<comp2>[A-Z]{1,3}\d?)\))?\s*$",
     re.IGNORECASE,
 )
+_WEEKDAYS = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
 DEFAULT_LOCAL_KICKOFF = (15, 0)
 MATCH_WINDOW_DAYS = 3
 
@@ -56,6 +62,7 @@ class ParsedPair:
     local_time: tuple[int, int] | None
     competition: str | None
     text: str
+    weekday: int | None = None
 
 
 @dataclass(frozen=True)
@@ -64,7 +71,7 @@ class ImportedFixture:
     away_team: str
     competition: str
     kickoff_utc: datetime
-    source: str  # provider_fixture_list | inferred
+    source: str  # provider_fixture_list | text (time given) | assumed (15:00 default)
 
 
 @dataclass
@@ -101,17 +108,41 @@ def parse_fixture_text(text: str) -> list[ParsedPair]:
         if not m:
             bad.append(chunk)
             continue
-        t = m.group("time")
-        local = None
-        if t:
-            hh, mm = re.split(r"[:.]", t)
-            local = (int(hh), int(mm))
+        local = _parse_time(m.group("time")) if m.group("time") else None
+        day = m.group("day")
         comp = m.group("comp") or m.group("comp2")
         pairs.append(ParsedPair(m.group("home").strip(), m.group("away").strip(), local,
-                                comp.upper() if comp else None, chunk))
+                                comp.upper() if comp else None, chunk,
+                                _WEEKDAYS[day[:3].lower()] if day else None))
     if bad:
         raise RoundImportError([f"could not read {b!r} (expected 'Home v Away')" for b in bad])
     return pairs
+
+
+def _parse_time(text: str) -> tuple[int, int]:
+    t = text.strip().lower().replace(" ", "")
+    suffix = t[-2:] if t.endswith(("am", "pm")) else ""
+    t = t[: len(t) - len(suffix)]
+    hh, mm = [*re.split(r"[:.]", t), "0"][:2]
+    hour, minute = int(hh), int(mm)
+    if suffix == "pm" and hour < 12:
+        hour += 12
+    if suffix == "am" and hour == 12:
+        hour = 0
+    if not (0 <= hour < 24 and 0 <= minute < 60):
+        raise RoundImportError([f"invalid kick-off time {text!r}"])
+    return hour, minute
+
+
+def _match_date(round_date: date, weekday: int | None) -> date | None:
+    """The date with ``weekday`` from the day before ``round_date`` to three days after."""
+    if weekday is None:
+        return round_date
+    for offset in range(-1, MATCH_WINDOW_DAYS + 1):
+        d = round_date + timedelta(days=offset)
+        if d.weekday() == weekday:
+            return d
+    return None
 
 
 def next_saturday(today: date) -> date:
@@ -142,6 +173,9 @@ def import_round(
     end = start + pd.Timedelta(days=MATCH_WINDOW_DAYS + 1)
     scheduled = m.loc[(m["status"] == FixtureStatus.SCHEDULED.value)
                       & (m["kickoff_utc"] >= start) & (m["kickoff_utc"] < end)]
+    if "fixture_source" in scheduled.columns:
+        # Fixtures we created from an earlier round file are not provider evidence.
+        scheduled = scheduled.loc[scheduled["fixture_source"] != "round_file"]
     finished = m.loc[m["status"] == FixtureStatus.FINISHED.value]
     out: list[ImportedFixture] = []
     for p in pairs:
@@ -176,11 +210,16 @@ def import_round(
             problems.append(f"{p.text}: competition {inferred} is not configured in leagues.yaml")
             continue
         hh, mm = p.local_time or DEFAULT_LOCAL_KICKOFF
+        match_day = _match_date(round_date, p.weekday)
+        if match_day is None:
+            problems.append(f"{p.text}: that day is outside the round weekend")
+            continue
         if p.local_time is None:
             warnings.append(f"KICKOFF_ASSUMED: {p.text} is not in the provider's fixture list "
                             "yet; assumed 15:00 UK. Check it in the app")
-        local = datetime(round_date.year, round_date.month, round_date.day, hh, mm, tzinfo=UK)
-        out.append(ImportedFixture(home, away, inferred, local.astimezone(UTC), "inferred"))
+        local = datetime(match_day.year, match_day.month, match_day.day, hh, mm, tzinfo=UK)
+        out.append(ImportedFixture(home, away, inferred, local.astimezone(UTC),
+                                   "text" if p.local_time else "assumed"))
     if problems:
         raise RoundImportError(problems)
     deadline = min(f.kickoff_utc for f in out)

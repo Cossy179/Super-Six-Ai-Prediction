@@ -155,6 +155,10 @@ class Fixture(Base):
     kickoff_time_known: Mapped[bool] = mapped_column(Boolean)
     neutral: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(16))
+    # Where the row came from: a data provider (e.g. football_data_couk), or "round_file"
+    # when it was created only from a Super 6 round file and no provider has listed it yet.
+    source: Mapped[str] = mapped_column(String(64), default="football_data_couk",
+                                        server_default="football_data_couk")
     updated_at: Mapped[datetime] = mapped_column(default=_now, onupdate=_now)
 
 

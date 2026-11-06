@@ -74,7 +74,10 @@ commands at the top of [`docker-compose.yml`](docker-compose.yml).
    weekend's fixtures (usually by Friday). It also prints their UTC kick-off times.
    Without odds, the forecast falls back to the weaker results-only model.
    You can also type odds into the round file (`odds:`; see the example).
-3. **Import the round**: copy the six matchups from the Super 6 app and run
+3. **Get the round**: `super6 round fetch --round 16` finds the six fixtures in Sky
+   Sports' public preview article, from headings marked "PLAY SUPER 6!". It checks
+   robots.txt and identifies itself honestly. If it can't find exactly six, copy them from
+   the app instead:
    `super6 round import "Fulham v Newcastle, Man Utd v Aston Villa, ..." --round 16`.
    It fills in competitions and kick-off times from the provider's fixture list, sets the
    deadline to the first kick-off, writes `rounds/<round-id>.yaml`, and runs the
