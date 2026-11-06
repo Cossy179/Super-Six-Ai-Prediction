@@ -260,6 +260,86 @@ def predict(round_file: str, model_name: str | None, cutoff: str | None, publish
         sys.exit(2)
 
 
+# --------------------------------------------------------------------------- rounds
+@main.group("round")
+def round_group() -> None:
+    """Create round files."""
+
+
+@round_group.command("import")
+@click.argument("text", required=False)
+@click.option("--file", "text_file", type=click.Path(exists=True, dir_okay=False), default=None,
+              help="Read the matchups from a file instead (one per line)")
+@click.option("--round", "round_number", type=int, default=None, help="Super 6 round number")
+@click.option("--date", "round_date", default=None,
+              help="Main match day (YYYY-MM-DD, UK). Default: the coming Saturday")
+@click.option("--fetch/--no-fetch", default=True,
+              help="Refresh the provider's upcoming fixtures and odds first")
+@click.option("--predict/--no-predict", "run_predict", default=True,
+              help="Forecast the round straight away")
+@click.option("--out", "out_path", type=click.Path(dir_okay=False), default=None)
+@click.pass_context
+def round_import(ctx: click.Context, text: str | None, text_file: str | None,
+                 round_number: int | None, round_date: str | None, fetch: bool,
+                 run_predict: bool, out_path: str | None) -> None:
+    """Build a round file from the six matchups shown in the Super 6 app.
+
+    TEXT is the six matchups, e.g. "Fulham v Newcastle, Man Utd v Aston Villa, ...".
+    Competitions and kick-off times are filled in from the provider's fixture list; the
+    deadline is the first kick-off.
+    """
+    from datetime import date as date_cls
+
+    from super6.ingestion.round_import import (
+        RoundImportError,
+        import_round,
+        next_saturday,
+        parse_fixture_text,
+    )
+    from super6.storage.repositories import load_history, load_registry
+
+    raw = Path(text_file).read_text(encoding="utf-8") if text_file else text
+    if raw is None:
+        raw = sys.stdin.read()
+    rules = load_rules()
+    leagues = set(pipeline.leagues_config()["competitions"])
+    day = (date_cls.fromisoformat(round_date) if round_date
+           else next_saturday(datetime.now(UK).date()))
+    settings = Settings.from_env()
+    try:
+        pairs = parse_fixture_text(raw)
+        with session_scope(_engine()) as session:
+            if fetch:
+                pipeline.ingest_upcoming(session, settings.data_dir / "raw", log=click.echo)
+            history = load_history(session)
+            registry = load_registry(session, TeamRegistry.from_config())
+            imported = import_round(pairs, registry, history, day, round_number=round_number,
+                                    known_competitions=leagues)
+    except RoundImportError as exc:
+        raise click.ClickException("round not imported:\n  " + "\n  ".join(exc.problems)) from exc
+    if len(imported.fixtures) != rules.fixtures_per_round:
+        click.secho(f"note: {len(imported.fixtures)} fixtures (a full round has "
+                    f"{rules.fixtures_per_round}); the prediction will be BLOCKED", fg="yellow")
+    click.echo(_table(["fixture", "comp", "kick-off (UK)", "from"], [
+        [f"{registry.name(f.home_team)} v {registry.name(f.away_team)}", f.competition,
+         f.kickoff_utc.astimezone(UK).strftime("%a %d %b %H:%M"),
+         "provider fixture list" if f.source == "provider_fixture_list" else "inferred"]
+        for f in imported.fixtures]))
+    first = imported.deadline_utc.astimezone(UK)
+    click.echo(f"deadline (first kick-off): {first:%a %d %b %H:%M} UK")
+    for w in imported.warnings:
+        click.secho(f"warning: {w}", fg="yellow")
+    target = Path(out_path) if out_path else project_root() / "rounds" / f"{imported.round_id}.yaml"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    note = f"Imported from the Super 6 app matchups on {datetime.now(UTC):%Y-%m-%d %H:%M} UTC"
+    target.write_text(imported.to_yaml(rules.rules_version, note), encoding="utf-8")
+    click.echo(f"wrote {target}")
+    if run_predict:
+        click.echo("")
+        ctx.invoke(predict, round_file=str(target), model_name=None, cutoff=None, publish=False,
+                   json_path=str(settings.reports_dir / f"{imported.round_id}.json"), save=True)
+
+
 # --------------------------------------------------------------------------- runs
 @main.group()
 def runs() -> None:
