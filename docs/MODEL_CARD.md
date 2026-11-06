@@ -19,11 +19,23 @@ below, flagged `ENSEMBLE_TEAM_MODEL_ONLY` and shown as `basis: results model`.
 - **Dependency:** the advantage exists only when pre-deadline odds are available. Run
   `super6 data upcoming` before predicting, or enter odds in the round file.
 
-**Challengers tested and not adopted** ([experiment 003](experiments/2026-11-05-catboost-features.md)):
-CatBoost goal-rate models with and without market inputs. Both lost to the ensemble on a
-fresh 2019–22 window and on 2023–26. Results-only CatBoost was no better than
-Dixon–Coles, and both CatBoost models were overconfident. They stay available via
-`--model catboost` and `--model catboost_market` for research.
+**Calibration of the default.** Expected points per fixture match realised points
+closely in every window: gaps of +0.006 (2018-19), −0.020 (2019–22) and −0.006
+(2023–26). Home/draw/away probabilities track observed frequencies, with draws slightly
+under-forecast (24–25% forecast vs 25–26% observed). See the generated calibration
+tables in [`experiments/`](experiments/).
+
+**Challengers tested and not adopted** (see the [experiment index](experiments/README.md)):
+
+| Challenger | Why it was rejected |
+|---|---|
+| CatBoost, results only or with market inputs (003) | Worse than the ensemble; results-only no better than Dixon–Coles; overconfident |
+| CatBoost with leak-free recalibration (004) | Calibration fixed the overconfidence but not the accuracy; still worse on log loss |
+| Dixon–Coles-shaped market model (005) | Matching the market's draw price overshoots; no log-loss gain |
+| Bivariate Poisson (DESIGN Model C) | Not built: no residual home/away goal correlation in about 13,000 held-out forecasts |
+
+All challengers stay available (`--model catboost`, `catboost_market`, `catboost_cal`,
+`catboost_market_cal`, `market_dc`) for research.
 
 The rest of this card describes the results-based team-strength models, which are used
 for fixtures without odds and as the baseline the ensemble must beat.

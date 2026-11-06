@@ -12,10 +12,15 @@ from super6.models.baselines import (
     LeagueAverageBaseline,
     RollingGoalsPoisson,
 )
+from super6.models.calibration import (
+    CatBoostCalibrated,
+    CatBoostMarketCalibrated,
+    RateCalibratedModel,
+)
 from super6.models.catboost_model import CatBoostGoalModel, CatBoostMarketModel
 from super6.models.dixon_coles import DixonColesModel
 from super6.models.ensemble import EnsembleModel
-from super6.models.market import MarketImpliedPoisson
+from super6.models.market import MarketImpliedDC, MarketImpliedPoisson
 from super6.models.poisson import PoissonModel
 
 MODEL_CLASSES: dict[str, type[ScoreModel]] = {
@@ -27,9 +32,12 @@ MODEL_CLASSES: dict[str, type[ScoreModel]] = {
         LeagueAverageBaseline,
         EmpiricalScoreBaseline,
         MarketImpliedPoisson,
+        MarketImpliedDC,
         EnsembleModel,
         CatBoostGoalModel,
         CatBoostMarketModel,
+        CatBoostCalibrated,
+        CatBoostMarketCalibrated,
     )
 }
 
@@ -59,11 +67,15 @@ def build_model(
     models_cfg = defaults.get("models", {})
     params = dict(models_cfg.get(name, {}))
     params.update(overrides or {})
+    cls = MODEL_CLASSES[name]
+    if issubclass(cls, RateCalibratedModel):
+        params.setdefault("base_params", dict(models_cfg.get(cls.base_class.name, {})))
     if name == EnsembleModel.name:
         # Components use their own documented defaults unless explicitly overridden.
         team = params.get("team_model", "dixon_coles")
         params.setdefault("team_params", dict(models_cfg.get(team, {})))
-        params.setdefault("market_params", dict(models_cfg.get(MarketImpliedPoisson.name, {})))
+        market = params.get("market_model", MarketImpliedPoisson.name)
+        params.setdefault("market_params", dict(models_cfg.get(market, {})))
     if "families" in params:
         params["families"] = tuple(params["families"])
     if "rho_bounds" in params:

@@ -408,8 +408,33 @@ def backtest(start: str, end: str, models: str, reference: str, competitions: st
                           resamples=boot.get("resamples", 2000), seed=boot.get("seed", 7))
     target = Path(out_dir) if out_dir else Settings.from_env().reports_dir / f"backtest-{label}"
     paths = write_report(report, rows, rounds, target)
+    from super6.evaluation.tracking import experiment_record, log_experiment
+
+    log = log_experiment(experiment_record(meta, report.summary, paths),
+                         Settings.from_env().reports_dir)
     click.echo(report.markdown)
-    click.echo(f"\nwrote {paths['markdown']}")
+    click.echo(f"\nwrote {paths['markdown']} (logged in {log})")
+
+
+@main.command()
+@click.option("--last", default=20, show_default=True, help="Show the most recent N runs")
+def experiments(last: int) -> None:
+    """List logged backtests and experiments (best model by exact-score log loss)."""
+    from super6.evaluation.tracking import read_log
+
+    records = read_log(Settings.from_env().reports_dir)[-last:]
+    if not records:
+        click.echo("no experiments logged yet (run `super6 backtest` or scripts/run_experiment.py)")
+        return
+    rows = []
+    for r in records:
+        best = min(r["overall"], key=lambda m: m["exact_log_loss"]) if r["overall"] else {}
+        rows.append([r["logged_at"][:16].replace("T", " "), r["label"],
+                     f"{r['window'][0]} → {r['window'][1]}", len(r["overall"]),
+                     best.get("model", "-"), f"{best.get('exact_log_loss', float('nan')):.4f}",
+                     r.get("code_version", "")])
+    click.echo(_table(["logged (UTC)", "label", "window", "models", "best", "log loss",
+                       "code"], rows))
 
 
 @main.command("replay-rounds")

@@ -178,6 +178,13 @@ class PointInTimeView:
             odds_type=str(row["odds_type"]),
         )
 
+    def at(self, cutoff: datetime | pd.Timestamp | str) -> PointInTimeView:
+        """A view at an *earlier* cutoff (it can only ever know less than this one)."""
+        earlier = to_timestamp(cutoff)
+        if earlier > self.cutoff:
+            raise LeakageError(f"view at {earlier} would see beyond the cutoff {self.cutoff}")
+        return PointInTimeView(self._history, earlier)
+
     def fingerprint(self) -> str:
         """Stable hash of the cutoff and every result visible in the view."""
         if self._fingerprint is None:

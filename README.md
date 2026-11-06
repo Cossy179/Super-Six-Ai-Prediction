@@ -114,12 +114,14 @@ Phase 1 of the [roadmap](DESIGN.md#20-delivery-roadmap) is in place, and most of
 - feature ablations;
 - replay of verified historical rounds.
 
-The CatBoost challengers were tested against rules declared in advance and **not
-adopted**; see [experiment 003](docs/experiments/2026-11-05-catboost-features.md). All
-experiments are in [`docs/experiments/`](docs/experiments/). Not yet built:
+Phase 2 is complete apart from the xG evaluation, which has too little xG history for now.
+The work also added a leak-free calibration layer, experiment tracking
+(`super6 experiments`) and a residual-dependence check (DESIGN "Model C"). Five
+experiments, each with rules declared in advance, are indexed in
+[`docs/experiments/`](docs/experiments/README.md). The default is still the market-first
+ensemble: every challenger was tested and rejected. Not yet built:
 
-- A calibration layer for the ML challenger, and xG evaluation once a full season of xG
-  exists (rest of Phase 2).
+- xG evaluation, which needs more xG history (see the experiment index).
 - Licensed goal-timing data, a hazard model for Golden Goal, scheduling and alerting
   (Phase 3).
 - FastAPI service and Next.js dashboard (Phase 4). The JSON written by
