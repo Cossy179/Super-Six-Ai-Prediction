@@ -25,6 +25,7 @@ pip install -e ".[dev]"
 super6 db init                 # SQLite at data/super6.db (set SUPER6_DATABASE_URL for Postgres)
 super6 data download           # Football-Data.co.uk CSVs, 2016-17 → current season
 super6 data ingest             # validate + load (idempotent)
+super6 data goals              # Premier League goal minutes (openfootball, CC0)
 super6 predict rounds/example-round.yaml
 ```
 
@@ -37,7 +38,7 @@ Manchester United v Brighton & Hove Albion  1-2     1-1      11.6%            1.
 Coventry City v Fulham                      0-1     1-1      12.8%            1.04    35.2%/26.9%/37.9%  1.29/1.34  results model
 ...
 expected points: points mode 7.77, jackpot mode 6.96
-Golden Goal: minute 4 (80% interval 1–14, expected error ±3.9 min) [uniform-hazard-poisson-simulation — baseline]
+Golden Goal: minute 4 (80% interval 1–14, expected error ±3.9 min) [uniform-hazard: constant scoring rate]
 ```
 
 Where the two modes differ, points mode is backing the more likely *result*: Brighton and
@@ -97,7 +98,9 @@ yourself.
 5. **Lock** the run you are going to use, before the deadline: `super6 runs lock <run-id>`.
    A locked run cannot be edited or deleted.
 6. **Enter the picks yourself** on the official Super 6 site.
-7. **Settle** after the matches: `super6 data download && super6 data ingest && super6 settle <round-id>`.
+7. **Settle** after the matches: `super6 data download && super6 data ingest && super6 data goals && super6 settle <round-id>`.
+   The Golden Goal is settled from goal minutes once openfootball publishes them, or pass
+   `--golden-goal-minute` with the official answer.
 
 To test the model on real past rounds, add verified round files to `rounds/history/` and
 run `super6 replay-rounds rounds/history` (see `docs/OPERATIONS.md`).
@@ -116,29 +119,28 @@ Other commands: `super6 runs list`, `super6 runs show <id>`, `super6 ratings --c
 | Models | `models/` | Market-first ensemble (default), Dixon–Coles, team-strength Poisson, market-implied, and baselines: league average, empirical scorelines, rolling goals |
 | Score grid | `prediction/score_grid.py` | Adaptive grid with explicit tail mass; never silently renormalised |
 | Optimiser | `prediction/optimiser.py` | Jackpot and points modes with deterministic tie-breaks |
-| Golden Goal | `golden_goal/` | 1-indexed minutes, staggered kick-offs, closest-minute median. A **labelled baseline** until goal-timing data is licensed |
+| Golden Goal | `golden_goal/` | Goal-time profiles (uniform default; empirical from openfootball goal minutes, [experiment 006](docs/experiments/2026-11-06-golden-goal-profile.md)), exact earliest-minute distribution, closest-minute median, settlement from stored goal minutes |
 | Evaluation | `evaluation/` | Walk-forward replay, paired block bootstrap, calibration, synthetic rounds (labelled as such) |
 
 ## Status
 
-Phase 1 of the [roadmap](DESIGN.md#20-delivery-roadmap) is in place, and most of Phase 2:
+Phases 1–3 of the [roadmap](DESIGN.md#20-delivery-roadmap) are complete. See
+[`docs/PHASE_STATUS.md`](docs/PHASE_STATUS.md).
 
-- the market-first ensemble (the default);
-- point-in-time ML features (Elo, goals, shots, xG, schedule, tier);
-- CatBoost challengers;
-- feature ablations;
-- replay of verified historical rounds.
+- **Phase 1:** data foundation, point-in-time views, baselines and the statistical MVP.
+- **Phase 2:** the market-first ensemble (the default), ML challengers, ablations,
+  calibration, experiment tracking (`super6 experiments`) and round replay.
+- **Phase 3:** official 2026/27 rules, round fetching, the unattended hourly cycle
+  (`super6 cycle`) with locking, settlement and alerts. Also goal minutes from openfootball
+  and goal-time profiles for the Golden Goal.
 
-Phase 2 is complete apart from the xG evaluation, which has too little xG history for now.
-The work also added a leak-free calibration layer, experiment tracking
-(`super6 experiments`) and a residual-dependence check (DESIGN "Model C"). Five
-experiments, each with rules declared in advance, are indexed in
-[`docs/experiments/`](docs/experiments/README.md). The default is still the market-first
-ensemble: every challenger was tested and rejected. Not yet built:
+Six experiments, each with rules declared in advance, are indexed in
+[`docs/experiments/`](docs/experiments/README.md). After the ensemble was promoted
+(experiment 002), every challenger was rejected. The defaults are therefore the
+market-first ensemble and the uniform Golden Goal profile. Not yet built:
 
 - xG evaluation, which needs more xG history (see the experiment index).
-- Licensed goal-timing data, a hazard model for Golden Goal, scheduling and alerting
-  (Phase 3).
+- Champions League fixtures (needs a football-data.org API key).
 - FastAPI service and Next.js dashboard (Phase 4). The JSON written by
   `predict --json` already follows the API response shape in DESIGN §15.1.
 

@@ -223,9 +223,12 @@ def _print_forecast(payload: dict[str, Any]) -> None:
     gg = payload.get("golden_goal")
     if gg:
         lo, hi = gg["interval_80"]
+        basis = {"uniform-hazard": "constant scoring rate",
+                 "empirical-hazard": "goal-time profile from stored goal minutes"}.get(
+            str(gg["method"]).removesuffix("-simulation"), "")
         click.echo(f"Golden Goal: minute {gg['minute']} (80% interval {lo}–{hi}, expected "
-                   f"error ±{gg['expected_absolute_error_minutes']} min) [{gg['method']} — "
-                   "baseline, no goal-timing data]")
+                   f"error ±{gg['expected_absolute_error_minutes']} min) [{gg['method']}"
+                   + (f": {basis}]" if basis else "]"))
     no_odds = [f for f in payload["fixtures"] if f["forecast_basis"] == "results model"]
     if no_odds and payload["model_version"].startswith("ensemble@"):
         click.secho(f"\n{len(no_odds)} fixture(s) had no pre-deadline odds and use the results "
@@ -752,9 +755,11 @@ def experiments(last: int) -> None:
         return
     rows = []
     for r in records:
-        best = min(r["overall"], key=lambda m: m["exact_log_loss"]) if r["overall"] else {}
-        rows.append([r["logged_at"][:16].replace("T", " "), r["label"],
-                     f"{r['window'][0]} → {r['window'][1]}", len(r["overall"]),
+        overall = r.get("overall") or []  # experiments other than score models have none
+        best = min(overall, key=lambda m: m["exact_log_loss"]) if overall else {}
+        logged = str(r.get("logged_at") or r.get("id", "").partition("@")[2])
+        rows.append([logged[:16].replace("T", " "), r["label"],
+                     f"{r['window'][0]} → {r['window'][1]}", len(overall) or "-",
                      best.get("model", "-"), f"{best.get('exact_log_loss', float('nan')):.4f}",
                      r.get("code_version", "")])
     click.echo(_table(["logged (UTC)", "label", "window", "models", "best", "log loss",

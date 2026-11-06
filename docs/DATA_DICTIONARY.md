@@ -26,6 +26,7 @@ training.
 | `market_snapshots.available_at` (prematch) | 18:00 UK on Friday (Fri–Mon games) or Tuesday (Tue–Thu games), or one hour before kick-off if earlier. For upcoming fixtures, the download time | Provider's published collection schedule; chosen to be late rather than early |
 | `market_snapshots.available_at` (closing) | kick-off | Closing odds are never available before the deadline |
 | `fixture_stats.available_at` | same as the result | Shots and xG are post-match information |
+| `goal_events` | same as the match's result | Goal minutes are post-match information. A view only sees the goals of the results it can see (`PointInTimeView.goal_events`) |
 
 Models only read data through `PointInTimeView(cutoff)`, which filters on these fields.
 
@@ -41,8 +42,15 @@ See `src/super6/storage/models.py` for column types. Key tables:
 - `fixtures.source`: where the row came from. Either the data provider
   (`football_data_couk`), or `round_file` when it exists only because a Super 6 round file
   listed it. A later provider listing replaces `round_file` with the provider name.
-- `fixtures`, `fixture_results`, `market_snapshots`, `fixture_stats`, `goal_events`
-  (empty until a licensed event feed exists).
+- `fixtures`, `fixture_results`, `market_snapshots`, `fixture_stats`.
+- `goal_events`: one row per goal, from openfootball (CC0) via `super6 data goals`.
+  Columns: `period` (1 or 2), `match_minute` (1–90; stoppage goals carry 45 or 90),
+  `stoppage_minute` (e.g. 4 for 90+4), and `team_side` (the side the goal counts for;
+  own goals count for the other team). A match's goals are stored only if they add up to
+  its score and agree with the stored result. Otherwise the match is quarantined as
+  `GOALS_DONT_MATCH_SCORE` or `GOAL_SCORE_CONFLICT`. Matches that can't be joined to a
+  canonical fixture are quarantined as `GOAL_FIXTURE_NOT_FOUND` or `GOAL_TEAM_UNKNOWN`.
+  Premier League coverage starts in 2025-26. `event_utc` is not available.
 - `super6_rounds`, `super6_round_fixtures`: the manually verified round.
 - `prediction_runs`: lifecycle `DRAFT → VALIDATED → PUBLISHED → LOCKED → SETTLED`, or
   `BLOCKED`. Holds the input fingerprint, code version, rules version, warnings and

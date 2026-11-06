@@ -198,8 +198,9 @@ def main() -> None:
     matches.to_csv(out / "matches.csv", index=False)
     rounds.to_csv(out / "rounds.csv", index=False)
     (out / "summary.json").write_text(json.dumps(summary, indent=2, default=str))
-    log_experiment({"id": f"exp006@{pd.Timestamp.now(tz='UTC'):%Y%m%dT%H%M%SZ}",
-                    "label": "exp006", "window": [args.start, args.end],
+    now = pd.Timestamp.now(tz="UTC")
+    log_experiment({"id": f"exp006@{now:%Y%m%dT%H%M%SZ}", "logged_at": now.isoformat(),
+                    "label": "exp006", "window": [args.start, args.end], "overall": [],
                     "competitions": [args.competition], "code_version": code_version(),
                     "models": ["golden_goal:uniform", "golden_goal:empirical"],
                     "golden_goal": summary, "outputs": {"dir": str(out)}},

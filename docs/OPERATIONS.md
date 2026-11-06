@@ -42,10 +42,20 @@ Warnings and errors are also posted to `SUPER6_ALERT_WEBHOOK_URL` (Slack or Disc
 incoming webhook) when it is set. The same alert for the same round is sent at most once
 a day. Each run's summary is written to `reports/cycle/`.
 
-**Golden Goal evaluation.** After a round, record the official Golden Goal minute from the
-app: `super6 settle <round-id> --golden-goal-minute 7` (use 0 if there were no goals).
-That stores each run's Golden Goal error, which builds a track record without licensed
-goal-timing data.
+**Golden Goal evaluation.** Settlement works out the Golden Goal from stored goal minutes
+when every fixture is covered, meaning it ended 0-0 or its goal minutes match its score.
+openfootball (CC0) usually publishes goal minutes a few days after a round. The cycle
+does not revisit a settled round, so once they appear run:
+
+```bash
+super6 data goals && super6 settle <round-id>
+```
+
+Alternatively, record the official minute from the app:
+`super6 settle <round-id> --golden-goal-minute 7` (use 0 if there were no goals). An
+official minute always replaces one worked out from goal minutes. It is also the only
+way to settle under the `first_in_real_time` reading, which needs wall-clock goal times.
+Each run's Golden Goal error is stored either way.
 
 ## Before each round
 
@@ -59,7 +69,11 @@ goal-timing data.
    - `RESULTS_STALE` / `TEAM_DATA_STALE`: refresh the data first.
    - `UNKNOWN_TEAM` / `LOW_DATA_TEAM`: a team with little or no history (newly promoted
      from outside the ingested leagues). Its forecast is shrunk to an average team.
-   - `GOLDEN_GOAL_BASELINE_ONLY`: the minute comes from the uniform-hazard baseline.
+   - `GOLDEN_GOAL_BASELINE_ONLY`: the minute comes from the uniform-hazard profile (the
+     default; see experiment 006).
+   - `GOLDEN_GOAL_PROFILE_FALLBACK`: `profile: empirical` was configured but fewer than
+     400 goal minutes were public at the cutoff, so the uniform profile was used. Run
+     `super6 data goals`.
 5. `super6 runs lock <run-id>` before the deadline.
 
 ## Failure behaviour

@@ -114,6 +114,62 @@ python scripts/golden_goal_experiment.py \
   --start 2026-01-01 --end 2026-07-01 --out reports/exp006
 ```
 
-## Results
+## Results (added after the run)
 
-*To be added after the run.*
+The run used code `758f29e`, the commit that recorded this protocol, and is logged as
+`exp006` in `reports/experiments.jsonl`. Output is in `reports/exp006/` (`summary.json`,
+`matches.csv`, `rounds.csv`).
+
+- **Coverage:** all 194 test matches were covered (none excluded). There were 19
+  synthetic rounds.
+- **Training data:** the walk-forward candidate was fitted on 524 to 1021 goals and never
+  fell back to uniform.
+
+| | Uniform (baseline) | Empirical (candidate) | Candidate − baseline [95% CI] |
+|---|---:|---:|---:|
+| (a) First-goal log loss, 21 categories ↓ | **2.8939** | 2.8962 | +0.0023 [−0.0391, +0.0440] |
+| (b) Golden Goal pick, mean absolute error (min) ↓ | 5.11 | **4.74** | −0.37 [−1.05, +0.37] |
+| Forecast expected absolute error (min) | 3.87 | 5.23 | |
+
+**Decision: fails condition 1.** The candidate's first-goal log loss is not lower: the
+interval spans zero. It passes condition 2, so it is not worse at picking. `uniform` stays
+the default; `profile: empirical` remains an option.
+
+### Additional results (not part of the rule)
+
+How often each match's first goal fell in broad bands, against each arm's forecast:
+
+| First goal | Observed | Uniform | Empirical |
+|---|---:|---:|---:|
+| Minutes 1–15 | 26.8% | 35.9% | 28.0% |
+| 16–30 | 20.6% | 22.9% | 19.9% |
+| 31–45 (incl. 45) | 23.7% | 16.2% | 23.0% |
+| 46–90 | 20.1% | 19.2% | 23.3% |
+| No goal | 8.8% | 5.8% | 5.8% |
+| Exactly minute 45 | 3.6% | 2.3% | 4.6% |
+| Exactly minute 90 | 2.1% | 1.1% | 2.1% |
+
+These bands were computed after seeing the predeclared result, so they are
+exploratory. The band table, the 45 and 90 rows, and the per-round picks (uniform almost
+always picks 4–5, empirical 5–6) all come from the same run.
+
+### What we learned
+
+- **By broad bands, the empirical profile is better calibrated.** The uniform profile
+  puts too much of the first goal in the opening 15 minutes (35.9% against 26.8%
+  observed) and too little just before half-time. The empirical profile gets both close.
+- **Its 5-minute detail is noise at this sample size.** The 21-category log loss is level
+  because the empirical shape's band-to-band noise costs as much as its better broad
+  shape gains. For example, its share for minutes 1–5 is too low. Only about 500–1000
+  goals (one season) are available to fit 18 bands and two stoppage shares.
+- **The uniform model understates its own error.** Its forecast expected error (3.87
+  minutes) is well below its realised error (5.11). The empirical profile's forecast
+  (5.23) is closer to what it achieved (4.74). The "expected error" shown with each
+  forecast is therefore optimistic under the default.
+- **No-goal matches were more common than forecast** (8.8% against 5.8%, 17 of 194
+  matches). That comes from the score model's expected goals, not the timing profile,
+  and is within sampling noise for this window (about 1.7 standard errors).
+- **This test has little power:** one half-season and 19 rounds. The next step is a
+  *smoothed* profile, either wider bands or a fitted curve, tested under its own
+  predeclared protocol. The test data should be 2026-27 goal minutes, once openfootball
+  publishes them, and the locked live rounds.

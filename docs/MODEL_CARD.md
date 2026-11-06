@@ -104,7 +104,29 @@ see the experiment record. Plain `poisson` performs the same as `dixon_coles`.
 
 ## Golden Goal
 
-The Golden Goal minute comes from a **labelled baseline** (`uniform-hazard-poisson-simulation`).
-It assumes each match's goals arrive at a constant rate and uses the real kick-off times.
-It has not been evaluated, because no licensed goal-timing data is ingested. Treat it as
-a rough guide only.
+The Golden Goal minute uses a **goal-time profile** scaled by each match's expected goals
+from the score model:
+
+- **`uniform-hazard`** (the default): a constant scoring rate through the match.
+- **`empirical-hazard`** (`golden_goal.profile: empirical`): shares by 5-minute band and
+  stoppage time. They are fitted to Premier League goal minutes (openfootball, CC0) from
+  matches whose results were public before the cutoff.
+
+Under the official reading (earliest match minute across the six games), the round's
+distribution is exact. The pick is its median, matching the closest-minute tie-break.
+
+[Experiment 006](experiments/2026-11-06-golden-goal-profile.md) tested the two profiles on
+January–June 2026 (194 matches, 19 synthetic rounds):
+
+- First-goal log loss was level: empirical minus uniform +0.0023, 95% CI −0.039 to
+  +0.044.
+- Mean pick error: 5.11 minutes (uniform) and 4.74 (empirical), not significantly
+  different.
+
+The empirical profile was therefore **not promoted**.
+
+Known weaknesses of the default:
+
+- It puts too many first goals in the opening 15 minutes (forecast 36%, observed 27%).
+- The expected error it reports is optimistic: 3.9 minutes forecast against 5.1
+  realised.

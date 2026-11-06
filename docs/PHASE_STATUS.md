@@ -9,12 +9,12 @@ compared against baselines in [experiment 001](experiments/2026-11-05-phase1-wal
 ## Phase 2: enriched modelling and evaluation ✓ (xG deferred)
 
 - **Champion:** the market-first ensemble, selected on out-of-sample evidence.
-- **Experiments:** five, all with rules declared in advance, covering ablations,
+- **Experiments:** five (001–005), all with rules declared in advance, covering ablations,
   calibration and the Model C check. See the [experiment index](experiments/README.md),
   which also has the exit-criteria table.
 - **xG:** waiting for enough xG history.
 
-## Phase 3: Golden Goal and round automation (in progress)
+## Phase 3: Golden Goal and round automation ✓
 
 | Build item | Status |
 |---|---|
@@ -22,12 +22,12 @@ compared against baselines in [experiment 001](experiments/2026-11-05-phase1-wal
 | Fixture import | ✓ `super6 round fetch` (public previews) and `round import` (paste) |
 | Scheduling | ✓ `super6 cycle` hourly, via cron or the Compose `scheduler` service |
 | Prediction locking | ✓ Automatic in the last 60 minutes, with database-enforced immutability |
-| Official settlement | ✓ Points, exact hits and log loss; void fixtures per the rules; Golden Goal error once you enter the official minute |
+| Official settlement | ✓ Points, exact hits and log loss; void fixtures per the rules; the Golden Goal is worked out from stored goal minutes, or from the official minute you enter (which takes precedence) |
 | Alerting | ✓ `reports/alerts.jsonl`, exit code, optional Slack/Discord webhook |
 | Delayed kick-offs | ✓ Provider kick-off changes update the round and the deadline, with an alert |
-| Golden Goal: historical baseline | ⧗ Needs historical first-goal minutes. The current pick is a labelled uniform-hazard simulation |
-| Golden Goal: hazard model and simulation challenger | ⧗ Blocked: needs licensed goal-event times (DESIGN §12.3) |
-| Authorised goal-event ingestion | ⧗ Blocked: no licensed source yet. `goal_events` table is ready |
+| Goal-event ingestion | ✓ `super6 data goals`: Premier League goal minutes from openfootball (CC0, from 2025-26), checked against stored scores and point-in-time like results |
+| Golden Goal: historical baseline | ✓ Uniform-hazard profile scaled by each match's expected goals; the earliest-minute answer is computed exactly |
+| Golden Goal: hazard model and simulation challenger | ✓ Empirical goal-time profile (`profile: empirical`) and real-time Monte Carlo. [Experiment 006](experiments/2026-11-06-golden-goal-profile.md): not promoted, so uniform stays the default |
 
 | Exit criterion | Status |
 |---|---|
@@ -36,9 +36,14 @@ compared against baselines in [experiment 001](experiments/2026-11-05-phase1-wal
 | Delayed kick-offs and no-goal cases | ✓ Kick-off alignment; goalless rounds count as minute 0 |
 | Failures visibly reported | ✓ Alerts, exit code and webhook |
 
-**To finish Phase 3:** licence a goal-event feed, or collect official Golden Goal minutes
-over the shadow period with `settle --golden-goal-minute`. Then build and test the hazard
-model under a predeclared rule, like the other experiments.
+**Open after Phase 3:**
+
+- A smoothed goal-time profile (experiment 006's lead), tested on 2026-27 goal minutes
+  once openfootball publishes them.
+- Championship goal minutes: openfootball has none yet.
+- The real-time Golden Goal reading cannot be settled from stored data, because it needs
+  wall-clock goal times. Under that reading, enter the official minute with
+  `settle --golden-goal-minute`.
 
 ## Phase 4: dashboard and production readiness (not started)
 

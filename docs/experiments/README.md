@@ -11,6 +11,7 @@ seen; the commit is linked in each write-up. Every run is also logged automatica
 | [003](2026-11-05-catboost-features.md) | CatBoost challengers and feature-family ablations | 2019-07 → 2022-07 | Not promoted. Shots kept in the CatBoost features; xG untestable |
 | [004](2026-11-05-calibrated-catboost.md) | Recalibrated CatBoost challengers | 2018-07 → 2019-07 | Not promoted. Calibration fixed the overconfidence but not the accuracy |
 | [005](2026-11-05-market-dc.md) | Dixon–Coles shape for the market model ("Model C") | 2018-07 → 2019-07 | Not promoted. No residual dependence; the draw shift overshoots |
+| [006](2026-11-06-golden-goal-profile.md) | Empirical goal-time profile for the Golden Goal | E0 2026-01 → 2026-06 (goal minutes) | Not promoted. Level on first-goal log loss; better broad calibration, noisy 5-minute detail |
 
 ## Window usage
 
@@ -21,6 +22,7 @@ seen; the commit is linked in each write-up. Every run is also logged automatica
 | 2019-20 – 2021-22 | Fresh test for experiment 003; consistency check afterwards |
 | 2022-23 | Validation: Dixon–Coles `xi`/`ridge`, ensemble weight |
 | 2023-24 – 2026-27 (to Nov) | Test for 001–002; consistency check afterwards |
+| E0 2025-26 goal minutes | Golden Goal profile training (Aug–Dec 2025, walk-forward) and test (Jan–Jun 2026) for 006. Whole-season summaries were seen beforehand (disclosed) |
 
 ## Phase 2 exit criteria (DESIGN §20)
 
