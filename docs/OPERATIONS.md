@@ -12,6 +12,41 @@
 Secrets (database passwords, future API keys) belong in `.env` or a secrets manager,
 never in the repository.
 
+## Running unattended: `super6 cycle`
+
+Run `super6 cycle` every hour. It is idempotent and does whatever the clock says is due:
+
+| When | What it does |
+|---|---|
+| Every run | Refreshes data: current-season results at most every 6 h, upcoming fixtures and odds at most hourly |
+| Up to 72 h before Saturday, no round file covers the weekend | `round fetch` from public previews. Alerts `ROUND_NOT_FOUND` if fewer than six are found |
+| Before the deadline | Aligns kick-offs with the provider (`KICKOFF_CHANGED` if a game moved; the round file and the deadline are updated). Re-forecasts, saving and publishing a new run only if a pick, the Golden Goal minute, or a probability changed (by > 0.1 points), e.g. when odds arrive |
+| Last 60 min before the deadline | Locks the latest run once (`ROUND_LOCKED`, with the picks) |
+| After the deadline | `ROUND_NOT_LOCKED` if nothing was locked. Settles once results are in (`ROUND_SETTLED`); a fixture with no result 3 days after kick-off is void (`VOID_FIXTURES`) |
+
+Scheduling, pick one:
+
+```bash
+# cron (on the machine that keeps the database)
+5 * * * * cd /path/to/Super-Six-Ai-Prediction && .venv/bin/super6 cycle >> reports/cycle.log 2>&1
+
+# or Docker Compose (PostgreSQL + an hourly loop)
+docker compose up -d db scheduler
+```
+
+The schedule must run where the database persists. A fresh cloud container each time
+would lose the locked records.
+
+**Alerts** go to `reports/alerts.jsonl`, and the command exits 1 if any error was raised.
+Warnings and errors are also posted to `SUPER6_ALERT_WEBHOOK_URL` (Slack or Discord
+incoming webhook) when it is set. The same alert for the same round is sent at most once
+a day. Each run's summary is written to `reports/cycle/`.
+
+**Golden Goal evaluation.** After a round, record the official Golden Goal minute from the
+app: `super6 settle <round-id> --golden-goal-minute 7` (use 0 if there were no goals).
+That stores each run's Golden Goal error, which builds a track record without licensed
+goal-timing data.
+
 ## Before each round
 
 1. `super6 data download && super6 data ingest`, then `super6 data status`. Check the

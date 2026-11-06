@@ -465,8 +465,17 @@ class Settlement:
 
 
 def settle_round(session: Session, round_id: str, rules: CompetitionRules,
-                 allow_missing: bool = False) -> list[Settlement]:
-    """Score every non-blocked run of a round; move its locked run to SETTLED."""
+                 allow_missing: bool = False, golden_goal_minute: int | None = None
+                 ) -> list[Settlement]:
+    """Score every non-blocked run of a round; move its locked run to SETTLED.
+
+    ``golden_goal_minute`` is the official Golden Goal answer, which the player can read
+    in the app after the round (0 if there were no goals). When given, each run's Golden
+    Goal error is recorded too. It can be added in a later call for an already-settled
+    round.
+    """
+    if golden_goal_minute is not None and not 0 <= golden_goal_minute <= 90:
+        raise ValueError("the Golden Goal minute must be between 0 and 90")
     rnd = session.get(Super6Round, round_id)
     if rnd is None:
         raise KeyError(f"no round {round_id}")
@@ -513,6 +522,11 @@ def settle_round(session: Session, round_id: str, rules: CompetitionRules,
         metrics["forecast"] = {"exact_log_loss_mean": float(sum(ll) / len(ll)) if ll else 0.0,
                                "rps_mean": float(sum(rps) / len(rps)) if rps else 0.0,
                                "void_fixtures": float(len(missing))}
+        gg = session.get(GoldenGoalPrediction, run.id)
+        if golden_goal_minute is not None and gg is not None:
+            metrics["golden_goal"] = {"actual_minute": float(golden_goal_minute),
+                                      "predicted_minute": float(gg.minute),
+                                      "abs_error": float(abs(gg.minute - golden_goal_minute))}
         have = {(e.mode, e.metric) for e in session.scalars(
             select(Evaluation).where(Evaluation.run_id == run.id))}
         for group, vals in metrics.items():

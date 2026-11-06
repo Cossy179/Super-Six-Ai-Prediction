@@ -69,6 +69,14 @@ commands at the top of [`docker-compose.yml`](docker-compose.yml).
 
 ## Weekly workflow
 
+**Unattended:** schedule `super6 cycle` hourly (cron or `docker compose up -d scheduler`).
+It fetches the round, refreshes results and odds, re-forecasts when they change, locks
+the forecast an hour before the deadline, settles after the matches, and alerts on
+anything that goes wrong. See `docs/OPERATIONS.md`. You still enter the picks in the app
+yourself.
+
+**By hand**, step by step:
+
 1. **Refresh data**: `super6 data download && super6 data ingest`.
 2. **Get pre-deadline odds**: `super6 data upcoming`, once the provider lists the
    weekend's fixtures (usually by Friday). It also prints their UTC kick-off times.

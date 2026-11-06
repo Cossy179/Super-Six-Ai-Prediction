@@ -383,6 +383,65 @@ def round_fetch(ctx: click.Context, round_number: int | None, round_date: str | 
                run_predict=run_predict, out_path=None, source_note=f"Found in: {sources}")
 
 
+# --------------------------------------------------------------------------- cycle
+@main.command()
+@click.option("--now", "now_text", default=None, hidden=True,
+              help="Pretend the time is this (ISO UTC); for testing")
+@click.option("--fetch-round/--no-fetch-round", default=True,
+              help="Look for a missing round in public previews")
+@click.option("--lock-window-minutes", type=float, default=60.0, show_default=True)
+@click.option("--void-after-days", type=float, default=3.0, show_default=True)
+def cycle(now_text: str | None, fetch_round: bool, lock_window_minutes: float,
+          void_after_days: float) -> None:
+    """Run the round workflow once (schedule it hourly). Idempotent.
+
+    Refreshes data, finds or fetches the round, re-forecasts when inputs change, locks
+    inside the lock window before the deadline, and settles after the matches. Alerts go
+    to reports/alerts.jsonl (and SUPER6_ALERT_WEBHOOK_URL if set). Exits 1 on errors.
+    """
+    from super6.ingestion.round_sources import PoliteFetcher, find_round_lines
+    from super6.jobs.alerts import AlertSink
+    from super6.jobs.cycle import CycleConfig, CycleDeps, provider_refresh, run_cycle
+    from super6.storage.repositories import load_history
+
+    settings = Settings.from_env()
+    rules = load_rules()
+    defaults = load_model_defaults()
+    leagues_cfg = pipeline.leagues_config()
+    cfg = CycleConfig(lock_window_minutes=lock_window_minutes, void_after_days=void_after_days,
+                      fetch_rounds=fetch_round)
+    fetcher = PoliteFetcher(raw_dir=settings.data_dir / "raw" / "round_sources")
+    deps = CycleDeps(
+        refresh=provider_refresh(settings.data_dir, cfg,
+                                 list(leagues_cfg["default_ingest"]["competitions"])),
+        load_history=load_history,
+        fetch_round_lines=lambda d: find_round_lines(d, fetcher),
+        model_factory=lambda: build_model(defaults["default_model"], defaults=defaults),
+        rounds_dir=project_root() / "rounds",
+        known_competitions=set(leagues_cfg["competitions"]),
+        golden_goal_config=defaults.get("golden_goal", {}),
+    )
+    alerts = AlertSink(settings.reports_dir / "alerts.jsonl")
+    now = ensure_utc(now_text) if now_text else None
+    report = run_cycle(_engine(), rules, deps, alerts, now, cfg)
+    for msg in report.refresh:
+        click.echo(f"refresh: {msg}")
+    for r in report.rounds:
+        click.echo(f"{r.round_id} (deadline {r.deadline_utc}): {', '.join(r.actions)}"
+                   + (f" · {r.run_id} {r.status}" if r.run_id else ""))
+        for line in r.picks:
+            click.echo(f"    {line}")
+    for a in alerts.emitted:
+        click.echo(f"{a.severity.upper()} {a.code}: {a.message}")
+    out = settings.reports_dir / "cycle" / f"cycle-{report.at.replace(':', '')}.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({"at": report.at, "refresh": report.refresh,
+                               "rounds": [r.__dict__ for r in report.rounds],
+                               "alerts": [a.__dict__ for a in alerts.emitted]}, indent=2))
+    if alerts.has_errors:
+        sys.exit(1)
+
+
 # --------------------------------------------------------------------------- runs
 @main.group()
 def runs() -> None:
@@ -467,13 +526,15 @@ def runs_lock(run_id: str) -> None:
 @main.command()
 @click.argument("round_id")
 @click.option("--allow-missing", is_flag=True, help="Score settled fixtures even if some are void")
-def settle(round_id: str, allow_missing: bool) -> None:
+@click.option("--golden-goal-minute", type=int, default=None,
+              help="The official Golden Goal minute from the app (0 = no goals)")
+def settle(round_id: str, allow_missing: bool, golden_goal_minute: int | None) -> None:
     """Score a round's runs against ingested results (run `data ingest` first)."""
     from super6.prediction.service import settle_round
 
     rules = load_rules()
     with session_scope(_engine()) as session:
-        results = settle_round(session, round_id, rules, allow_missing)
+        results = settle_round(session, round_id, rules, allow_missing, golden_goal_minute)
     for s in results:
         if s.missing_fixtures and not s.metrics:
             click.echo(f"{s.run_id}: waiting for results ({', '.join(s.missing_fixtures)})")

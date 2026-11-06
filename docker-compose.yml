@@ -4,6 +4,7 @@
 #   docker compose run --rm super6 data download
 #   docker compose run --rm super6 data ingest
 #   docker compose run --rm super6 predict rounds/example-round.yaml
+#   docker compose up -d scheduler          # runs `super6 cycle` every hour
 services:
   db:
     image: postgres:16
@@ -29,6 +30,26 @@ services:
       SUPER6_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-super6}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-super6}
       SUPER6_DATA_DIR: /app/data
       SUPER6_REPORTS_DIR: /app/reports
+    volumes:
+      - ./data:/app/data
+      - ./reports:/app/reports
+      - ./rounds:/app/rounds
+      - ./configs:/app/configs:ro
+
+  scheduler:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      SUPER6_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-super6}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-super6}
+      SUPER6_DATA_DIR: /app/data
+      SUPER6_REPORTS_DIR: /app/reports
+      SUPER6_ALERT_WEBHOOK_URL: ${SUPER6_ALERT_WEBHOOK_URL:-}
+    entrypoint: ["sh", "-c"]
+    # Errors are reported through alerts; the loop keeps going either way.
+    command: ["while true; do super6 cycle || true; sleep 3600; done"]
     volumes:
       - ./data:/app/data
       - ./reports:/app/reports
