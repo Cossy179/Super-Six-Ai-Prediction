@@ -54,7 +54,7 @@ def _spec(rules: CompetitionRules, kickoff: datetime, n: int = 6, **extra: objec
         "round_id": "test-round-1",
         "deadline_utc": kickoff,
         "rules_version": rules.rules_version,
-        "illustrative": True,
+        "illustrative": False,
         "fixtures": [{"home": h, "away": a, "competition": "SYN", "kickoff_utc": kickoff}
                      for h, a in pairs],
     }
@@ -74,7 +74,7 @@ def test_full_round_lifecycle(engine: Engine, rules: CompetitionRules,
     model = build_model("dixon_coles")
     fc = forecast_round(history, resolved, cutoff, model, rules, {"n_simulations": 5000})
     assert fc.status is RunStatus.VALIDATED
-    assert "ILLUSTRATIVE_DATA_ONLY" in fc.warnings and "RULES_UNVERIFIED" not in fc.warnings
+    assert "RULES_UNVERIFIED" not in fc.warnings
     payload = forecast_to_json(fc, reg)
     assert len(payload["modes"]["points"]["fixtures"]) == 6
     assert payload["golden_goal"]["method"] == "uniform-hazard-poisson-simulation"
@@ -230,3 +230,24 @@ def test_staggered_kickoffs_report_the_alternative_golden_goal(
     earlier = resolve_round(spec.model_copy(update={"deadline_utc": kickoff - timedelta(hours=1)}),
                             reg, rules, {"SYN"})
     assert any(w.startswith("DEADLINE_BEFORE_FIRST_KICKOFF") for w in earlier.warnings)
+
+
+def test_illustrative_rounds_are_never_saved(engine: Engine, rules: CompetitionRules,
+                                             league: tuple[MatchHistory, SyntheticTruth]
+                                             ) -> None:
+    from super6.prediction.service import IllustrativeRoundError
+    from super6.storage.models import Fixture, Super6Round
+
+    history, _ = league
+    reg = _setup(engine, history)
+    kickoff = (history.matches["kickoff_utc"].max() + pd.Timedelta(days=7)).to_pydatetime()
+    spec = _spec(rules, kickoff, illustrative=True)
+    resolved = resolve_round(spec, reg, rules, {"SYN"})
+    assert "ILLUSTRATIVE_DATA_ONLY" in resolved.warnings
+    fc = forecast_round(history, resolved, kickoff - timedelta(hours=2), build_model("poisson"),
+                        rules, {"n_simulations": 1000})
+    with pytest.raises(IllustrativeRoundError), session_scope(engine) as s:
+        persist_forecast(s, resolved, fc)
+    with session_scope(engine) as s:
+        assert s.scalar(select(Super6Round.id)) is None
+        assert s.scalar(select(Fixture.id)) is None
