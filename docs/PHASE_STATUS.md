@@ -57,11 +57,29 @@ These items come from the 6 November 2026 repository review. The question is no 
 | Evidence from observed odds | ⧗ 0 finished fixtures have observed odds so far. They accumulate only while `super6 cycle` runs on a schedule |
 | Probability integrity | ✓ A tail above tolerance now blocks the forecast. The one declared exception is the `empirical_score` baseline, whose tail is an explicit "any other score" share; it warns instead |
 | Golden Goal reading | ✓ Tooling: settling with an official minute records which reading it matches (`official_matches_earliest_match_minute` / `..._first_in_real_time`). ⧗ Evidence: needs official answers for rounds with staggered kick-offs |
-| Replay real historical Super 6 rounds | ⧗ The engine exists (`super6 replay-rounds`). It needs verified historical round files: six fixtures and the deadline per round, plus official Golden Goal answers where known |
+| Replay real historical Super 6 rounds | ✓ Tooling: `round import --history --date … --golden-goal-minute …` records a past round from the app, and `replay-rounds` scores points and the Golden Goal. ⧗ Data: no permitted public archive exists (see below), so rounds must be pasted from the app's results |
 | Smoothed Golden Goal profile | ⧗ Experiment 006's lead. It needs a fresh test window: 2026-27 goal minutes, once published |
 | Historical xG, line-ups, injuries | ⧗ Needs a permitted source with several seasons of coverage |
 | Market-residual model | ⧗ A model that learns corrections to the market's goal rates. Every historical season has been used for testing, so the fair test is the live shadow period |
 | Licence review | ⧗ The owner's decision: `configs/data_sources.yaml` entries marked `review_required` |
+
+### Data search (6 November 2026)
+
+| Data | Where it could come from | Outcome |
+|---|---|---|
+| Past Super 6 rounds | Official site `/results/` | Not usable: robots.txt disallows `/results/` and `/league/` |
+| | Sky preview articles ("PLAY SUPER 6" markers) | Not reliable for past rounds. Of five 2025-26 articles checked, two marked no games, one marked 2 of 5, and one marked 7 different games in a weekend. Older articles can't be listed: the listing pages load more through `/generic-news-listing/ajax/`, which robots.txt disallows |
+| | Squawka, Sporting Life | Squawka refused automated access (403); Sporting Life's tips pages don't list the fixtures |
+| | **The Super 6 app's results** | **Usable**: pasted by the owner with `round import --history` |
+| Official Golden Goal answers | The app only | Paste them with `--golden-goal-minute`, or enter them at settlement |
+| Odds with real timestamps | Our own `fixtures.csv` downloads | Collecting: 33 observed snapshots on 6 Nov 2026. They accumulate only while `super6 cycle` runs on a persistent machine |
+| 2026-27 goal minutes | openfootball | Not yet: its 2026-27 file has scores for 50 matches and no goal lists. The parser already reads its new layout |
+| Historical xG (several seasons) | football-data.co.uk | 2026-27 only |
+| | FBref | Lost its Opta data in January 2026; its terms restrict automated access |
+| | Understat | No published terms that permit reuse |
+| | Paid APIs (e.g. Opta, StatsBomb, Sportmonks) | Licensed; would need a subscription and key |
+| Line-ups, injuries | Fantasy Premier League API | Public but unofficial and undocumented, with no stated terms for automated use: the owner's call |
+| Champions League | openfootball/champions-league (CC0) | Results for 2024-25 and 2025-26 (189 matches each), without goal minutes; no 2026-27 yet. Current fixtures need football-data.org (free key) |
 
 ## Phase 4: dashboard and production readiness (not started)
 

@@ -58,3 +58,28 @@ def test_resolves_names_with_fc_suffix() -> None:
     assert resolve_team(reg, "Nottingham Forest FC") == "nottm-forest"
     assert resolve_team(reg, "Brighton & Hove Albion FC") == "brighton"
     assert resolve_team(reg, "Wolverhampton Wanderers FC") == "wolves"
+
+
+def test_reads_the_2026_27_layout_with_the_score_after_the_teams() -> None:
+    text = """\
+= English Premier League 2026/27
+
+\u25aa Matchday 1
+  Fri Aug 21 2026
+    20:00  Arsenal FC              v Coventry City FC         3-0 (2-0)
+                (Bukayo SAKA 12', 40', Eberechi EZE 77')
+  Sat Aug 22
+    12:30  Hull City AFC           v Manchester United FC     2-0 (2-0)
+           Nottingham Forest FC    v Leeds United FC          0-1 (0-0)
+                (Joel PIROE 90+2')
+    17:30  Brentford FC            v Tottenham Hotspur FC
+"""
+    parsed = parse_league_text(text, 2026)
+    by = {(m.home, m.away): m for m in parsed.matches}
+    arsenal = by[("Arsenal FC", "Coventry City FC")]
+    assert arsenal.match_date == date(2026, 8, 21) and (arsenal.home_goals, arsenal.away_goals) == (
+        3, 0)
+    assert [g.minute for g in arsenal.goals] == [12, 40, 77] and parsed.problems == []
+    forest = by[("Nottingham Forest FC", "Leeds United FC")]
+    assert [(g.side, g.minute, g.stoppage) for g in forest.goals] == [("away", 90, 2)]
+    assert parsed.without_goal_times == 1  # Hull 2-0 Man United: score only

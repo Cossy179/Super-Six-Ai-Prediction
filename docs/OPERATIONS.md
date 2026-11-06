@@ -140,16 +140,31 @@ authorised access.
 
 ## Replaying real Super 6 rounds
 
-Add verified historical rounds as round files with `illustrative: false`, for example in
-`rounds/history/<round-id>.yaml`. Each needs the six fixtures the competition actually
-used and its real deadline. Then run:
+No public archive of past rounds can be used. The Super 6 site's robots.txt disallows
+`/results/`. Sky's preview articles mark Super 6 games inconsistently: some articles mark
+none, others mark more than six. So past rounds come from the app's results, one round
+at a time:
+
+```bash
+super6 round import "Newcastle v Chelsea, Bournemouth v Burnley, ..." \
+  --history --date 2025-12-20 --round 17 --golden-goal-minute 5
+```
+
+`--history` writes `rounds/history/<round-id>.yaml`, records the paste as the
+confirmation, and does not fetch or forecast. Kick-off times come from the stored
+fixture list, and the deadline is the first kick-off. `--golden-goal-minute` is the
+official answer shown in the app (0 = no goals); leave it out if unknown. Then run:
 
 ```bash
 super6 replay-rounds rounds/history --out reports/history-replay.csv
 ```
 
-Each round is forecast one minute before its deadline, scored against ingested results,
-and labelled `historical`. Rounds marked illustrative are skipped unless you pass
+Each round is forecast one minute before its deadline and scored against ingested
+results (labelled `historical`). The replay also scores the Golden Goal pick. The answer
+is the official minute if given, otherwise the earliest-minute answer from stored goal
+minutes. Where goal minutes are stored, the replay also records which reading of "the
+first goal" the official answer matches. The summary counts that evidence over the rounds
+where the two readings differ. Rounds marked illustrative are skipped unless you pass
 `--allow-illustrative`. Rounds that fail validation are reported as BLOCKED.
 
 ## Backtests and model changes

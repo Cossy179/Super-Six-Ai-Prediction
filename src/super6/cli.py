@@ -335,17 +335,30 @@ def round_group() -> None:
 @click.option("--predict/--no-predict", "run_predict", default=True,
               help="Forecast the round straight away")
 @click.option("--out", "out_path", type=click.Path(dir_okay=False), default=None)
+@click.option("--history", "past_round", is_flag=True,
+              help="A past round from the app's results: saved to rounds/history/ for "
+                   "`super6 replay-rounds`, without fetching or forecasting")
+@click.option("--golden-goal-minute", type=click.IntRange(0, 90), default=None,
+              help="Past rounds: the official Golden Goal answer shown in the app (0 = no goals)")
 @click.option("--source-note", default=None, hidden=True)
 @click.pass_context
 def round_import(ctx: click.Context, text: str | None, text_file: str | None,
                  round_number: int | None, round_date: str | None, fetch: bool,
-                 run_predict: bool, out_path: str | None, source_note: str | None) -> None:
+                 run_predict: bool, out_path: str | None, past_round: bool,
+                 golden_goal_minute: int | None, source_note: str | None) -> None:
     """Build a round file from the six matchups shown in the Super 6 app.
 
     TEXT is the six matchups, e.g. "Fulham v Newcastle, Man Utd v Aston Villa, ...".
     Competitions and kick-off times are filled in from the provider's fixture list; the
-    deadline is the first kick-off.
+    deadline is the first kick-off. With --history, it records a past round (pass --date
+    and, if known, --golden-goal-minute) for replay.
     """
+    if past_round:
+        if round_date is None:
+            raise click.UsageError("--history needs --date (the round's main match day)")
+        fetch, run_predict = False, False
+    elif golden_goal_minute is not None:
+        raise click.UsageError("--golden-goal-minute is only for past rounds (--history)")
     from datetime import date as date_cls
 
     from super6.ingestion.round_import import (
@@ -388,7 +401,8 @@ def round_import(ctx: click.Context, text: str | None, text_file: str | None,
     click.echo(f"deadline (first kick-off): {first:%a %d %b %H:%M} UK")
     for w in imported.warnings:
         click.secho(f"warning: {w}", fg="yellow")
-    target = Path(out_path) if out_path else project_root() / "rounds" / f"{imported.round_id}.yaml"
+    folder = project_root() / "rounds" / ("history" if past_round else "")
+    target = Path(out_path) if out_path else folder / f"{imported.round_id}.yaml"
     target.parent.mkdir(parents=True, exist_ok=True)
     stamp = f"{datetime.now(UTC):%Y-%m-%d %H:%M} UTC"
     note = (f"{source_note} ({stamp})" if source_note
@@ -396,8 +410,10 @@ def round_import(ctx: click.Context, text: str | None, text_file: str | None,
     # Pasted from the app = confirmed by the person pasting; fetched = not yet.
     confirmation = (None if source_note is not None else
                     (datetime.now(UTC), "Six matchups pasted from the Super 6 app "
-                                        "(`super6 round import`)"))
-    target.write_text(imported.to_yaml(rules.rules_version, note, confirmation),
+                                        + ("results (past round)" if past_round else
+                                           "(`super6 round import`)")))
+    target.write_text(imported.to_yaml(rules.rules_version, note, confirmation,
+                                       golden_goal_minute),
                       encoding="utf-8")
     if confirmation is None:
         click.secho("These fixtures were found automatically and may be wrong. Check them in "
