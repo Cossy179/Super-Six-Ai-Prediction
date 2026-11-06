@@ -306,7 +306,7 @@ def _fetch_round(saturday: date, deps: CycleDeps, history: MatchHistory,
     sources = ", ".join(a["url"] for a in found.articles if a["super6_matches"])
     path = deps.rounds_dir / f"{imported.round_id}.yaml"
     path.write_text(imported.to_yaml(rules.rules_version,
-                                     f"Found by `super6 cycle` in: {sources}", confirmed=False),
+                                     f"Found by `super6 cycle` in: {sources}"),
                     encoding="utf-8")
     alerts.emit("info", "ROUND_FETCHED", f"{imported.round_id}: {', '.join(found.lines)}",
                 imported.round_id)

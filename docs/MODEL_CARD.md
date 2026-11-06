@@ -18,6 +18,17 @@ below, flagged `ENSEMBLE_TEAM_MODEL_ONLY` and shown as `basis: results model`.
   zero. It was promoted by a rule declared before the test.
 - **Dependency:** the advantage exists only when pre-deadline odds are available. Run
   `super6 data upcoming` before predicting, or enter odds in the round file.
+- **Caveat: historical odds timestamps are inferred.** In the backtests, each played
+  match's pre-match odds count as available at 18:00 UK on the provider's collection day
+  (Friday or Tuesday). That time comes from the provider's published schedule, not from
+  a recorded timestamp per snapshot (`availability_basis: inferred`). The market results
+  are therefore strong approximations, not proof of live performance. Prices we download
+  ourselves are stored as `observed`. Once enough have accumulated,
+  `super6 backtest --odds-basis observed,kickoff` re-tests the market model on those
+  alone. As of 6 November 2026 there are none for finished matches.
+- **Its edge over the market alone is tiny:** 2.881 against 2.882 log loss. With
+  `market_weight = 1.0` it *is* the market model whenever odds exist. Its value is the
+  fallback to Dixon–Coles when odds are missing.
 
 **Calibration of the default.** Expected points per fixture match realised points
 closely in every window: gaps of +0.006 (2018-19), −0.020 (2019–22) and −0.006

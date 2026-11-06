@@ -10,10 +10,11 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 
 import pandas as pd
 
-from super6.golden_goal.minutes import PERIOD_MINUTES, recorded_minute
+from super6.golden_goal.minutes import PERIOD_MINUTES, GoalEvent, first_goal, recorded_minute
 
 
 def goal_minute(period: int, match_minute: int, stoppage_minute: float | None,
@@ -26,12 +27,18 @@ def goal_minute(period: int, match_minute: int, stoppage_minute: float | None,
     """
     if period not in (1, 2):
         raise ValueError("period must be 1 or 2")
+    return recorded_minute(period, _seconds_into_period(period, match_minute, stoppage_minute),
+                           stoppage_mode)
+
+
+def _seconds_into_period(period: int, match_minute: int, stoppage_minute: float | None
+                         ) -> float:
     offset = 0 if period == 1 else PERIOD_MINUTES
     if stoppage_minute is None or math.isnan(stoppage_minute):
         listed = int(match_minute) - offset
     else:
         listed = PERIOD_MINUTES + int(stoppage_minute)
-    return recorded_minute(period, (listed - 1) * 60 + 30, stoppage_mode)
+    return (listed - 1) * 60 + 30
 
 
 @dataclass(frozen=True)
@@ -78,3 +85,29 @@ def round_golden_goal(first: Mapping[str, int | None], no_goal_minute: int | Non
     """Lowest first-goal minute across the round; the rules' no-goal answer if none."""
     scored = [m for m in first.values() if m is not None]
     return min(scored) if scored else no_goal_minute
+
+
+def golden_goal_by_reading(goals: pd.DataFrame, scores: Mapping[str, tuple[int, int]],
+                           kickoffs: Mapping[str, datetime], stoppage_mode: str,
+                           no_goal_minute: int | None) -> dict[str, int | None] | None:
+    """The round's answer under each reading of "the first goal", or None if not covered.
+
+    ``earliest_match_minute`` is exact. ``first_in_real_time`` is approximate: goal times
+    are listed by minute, so the wall clock is estimated from each kick-off plus a 47-minute
+    first half and a 15-minute break. Comparing both with the official answer shows which
+    reading the operator uses (DESIGN §3.4).
+    """
+    first = first_goal_minutes(goals, scores, stoppage_mode)
+    if first.uncovered:
+        return None
+    events = [GoalEvent(str(fid), kickoffs[str(fid)], int(period),
+                        _seconds_into_period(int(period), int(minute),
+                                             None if stoppage is None else float(stoppage)))
+              for fid, period, minute, stoppage in zip(
+                  goals["fixture_id"].tolist(), goals["period"].tolist(),
+                  goals["match_minute"].tolist(), goals["stoppage_minute"].tolist(),
+                  strict=True)
+              if str(fid) in scores]
+    real = first_goal(events, "first_in_real_time", stoppage_mode)
+    return {"earliest_match_minute": round_golden_goal(first.minutes, no_goal_minute),
+            "first_in_real_time": real.minute(stoppage_mode) if real else no_goal_minute}

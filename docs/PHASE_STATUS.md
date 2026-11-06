@@ -45,6 +45,24 @@ compared against baselines in [experiment 001](experiments/2026-11-05-phase1-wal
   wall-clock goal times. Under that reading, enter the official minute with
   `settle --golden-goal-minute`.
 
+## Phase 3.5: forecasting reliability and validation (in progress)
+
+These items come from the 6 November 2026 repository review. The question is no longer
+"is it built?" but "is the evidence for it trustworthy?".
+
+| Item | Status |
+|---|---|
+| Fail-safe fixture confirmation | ✓ Rounds are unconfirmed unless the file records `confirmed_at` and `confirmed_source`. Locking refuses anything else, including rounds stored before this change |
+| Odds timestamp integrity | ✓ Every odds snapshot is labelled `observed`, `inferred`, `kickoff` or `unknown`. `backtest --odds-basis observed,kickoff` evaluates without inferred timestamps |
+| Evidence from observed odds | ⧗ 0 finished fixtures have observed odds so far. They accumulate only while `super6 cycle` runs on a schedule |
+| Probability integrity | ✓ A tail above tolerance now blocks the forecast. The one declared exception is the `empirical_score` baseline, whose tail is an explicit "any other score" share; it warns instead |
+| Golden Goal reading | ✓ Tooling: settling with an official minute records which reading it matches (`official_matches_earliest_match_minute` / `..._first_in_real_time`). ⧗ Evidence: needs official answers for rounds with staggered kick-offs |
+| Replay real historical Super 6 rounds | ⧗ The engine exists (`super6 replay-rounds`). It needs verified historical round files: six fixtures and the deadline per round, plus official Golden Goal answers where known |
+| Smoothed Golden Goal profile | ⧗ Experiment 006's lead. It needs a fresh test window: 2026-27 goal minutes, once published |
+| Historical xG, line-ups, injuries | ⧗ Needs a permitted source with several seasons of coverage |
+| Market-residual model | ⧗ A model that learns corrections to the market's goal rates. Every historical season has been used for testing, so the fair test is the live shadow period |
+| Licence review | ⧗ The owner's decision: `configs/data_sources.yaml` entries marked `review_required` |
+
 ## Phase 4: dashboard and production readiness (not started)
 
 FastAPI service (DESIGN §15), Next.js dashboard, explanations, authenticated admin, and

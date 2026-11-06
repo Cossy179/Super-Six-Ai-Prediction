@@ -55,6 +55,9 @@ def _spec(rules: CompetitionRules, kickoff: datetime, n: int = 6, **extra: objec
         "deadline_utc": kickoff,
         "rules_version": rules.rules_version,
         "illustrative": False,
+        "confirmed": True,
+        "confirmed_at": kickoff - timedelta(days=1),
+        "confirmed_source": "test",
         "fixtures": [{"home": h, "away": a, "competition": "SYN", "kickoff_utc": kickoff}
                      for h, a in pairs],
     }
@@ -289,7 +292,15 @@ def test_unconfirmed_rounds_cannot_be_locked(engine: Engine, rules: CompetitionR
         run = persist_forecast(s, resolved, fc, publish=True)
         with pytest.raises(LockError, match="unconfirmed"):
             lock_run(s, run.id, now=kickoff - timedelta(hours=1))
-    # Once confirmed (the round file is re-saved with confirmed: true), it can be locked.
+    # A round stored before confirmation was recorded (no fields at all) is unconfirmed too.
+    with session_scope(engine) as s:
+        rnd = s.get(Super6Round, "test-round-1")
+        assert rnd is not None
+        rnd.spec = {k: v for k, v in rnd.spec.items()
+                    if k not in ("confirmed", "confirmed_at", "confirmed_source")}
+    with session_scope(engine) as s, pytest.raises(LockError, match="unconfirmed"):
+        lock_run(s, run.id, now=kickoff - timedelta(hours=1))
+    # Once confirmed (the round file records when and how), it can be locked.
     confirmed = resolve_round(_spec(rules, kickoff), reg, rules, {"SYN"})
     fc2 = forecast_round(history, confirmed, kickoff - timedelta(hours=1), build_model("poisson"),
                          rules, {"n_simulations": 1000})
@@ -328,3 +339,32 @@ def test_empirical_golden_goal_profile_uses_only_published_goals(
     early = forecast_round(MatchHistory(history.matches, history.odds, goals.head(100)),
                            resolved, cutoff, model, rules, {"profile": "empirical"})
     assert any(w.startswith("GOLDEN_GOAL_PROFILE_FALLBACK") for w in early.warnings)
+
+
+def test_tail_above_tolerance_blocks_unless_the_model_declares_it(
+        rules: CompetitionRules, league: tuple[MatchHistory, SyntheticTruth]) -> None:
+    from super6.models import MODEL_CLASSES
+    from super6.models.base import GridSettings
+
+    history, _ = league
+    reg = TeamRegistry()
+    for t in sorted(set(history.matches["home_team"])):
+        reg.add_team(t, t)
+    kickoff = (history.matches["kickoff_utc"].max() + pd.Timedelta(days=7)).to_pydatetime()
+    resolved = resolve_round(_spec(rules, kickoff), reg, rules, {"SYN"})
+    cutoff = kickoff - timedelta(hours=2)
+    # A grid capped at 3 goals a side cannot get the tail under 1e-6: blocked.
+    capped = MODEL_CLASSES["poisson"](GridSettings(min_goals=3, max_goals=3))
+    fc = forecast_round(history, resolved, cutoff, capped, rules, {})
+    assert fc.status is RunStatus.BLOCKED
+    assert any("TAIL_ABOVE_TOLERANCE" in b for b in fc.block_reasons)
+    # The scoreline-frequency baseline's tail is a declared "any other score" share: it
+    # warns instead.
+    empirical = forecast_round(history, resolved, cutoff, build_model("empirical_score"),
+                               rules, {})
+    assert empirical.status is RunStatus.VALIDATED
+    assert any("EXPLICIT_TAIL_ABOVE_TOLERANCE" in w for w in empirical.warnings)
+    # The default ensemble's grid grows until the tail is under the tolerance.
+    default = forecast_round(history, resolved, cutoff, build_model("ensemble"), rules, {})
+    assert all(p.distribution.tail <= 1e-6 for p in default.predictions)
+    assert default.status is RunStatus.VALIDATED

@@ -4,7 +4,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from super6.golden_goal.actual import first_goal_minutes, goal_minute, round_golden_goal
+from super6.golden_goal.actual import (
+    first_goal_minutes,
+    goal_minute,
+    golden_goal_by_reading,
+    round_golden_goal,
+)
 from super6.golden_goal.profile import (
     MIN_GOALS_FOR_EMPIRICAL,
     empirical_profile,
@@ -139,3 +144,27 @@ def test_first_goal_minutes_need_full_coverage() -> None:
     assert sorted(first.uncovered) == ["b", "d", "e"]
     assert round_golden_goal(first.minutes, 0) == 45
     assert round_golden_goal({"c": None}, 0) == 0
+
+
+def test_both_readings_of_the_first_goal_with_staggered_kickoffs() -> None:
+    early, late = KO - timedelta(hours=2, minutes=30), KO  # 12:30 and 15:00
+    goals = _goals([
+        ("early", 2, 80, None, "home"),  # about 14:07 by the wall clock
+        ("late", 1, 5, None, "away"),    # about 15:05
+        ("late", 2, 90, 3.0, "home"),
+    ])
+    scores = {"early": (1, 0), "late": (1, 1), "goalless": (0, 0)}
+    kickoffs = {"early": early, "late": late, "goalless": late}
+    readings = golden_goal_by_reading(goals, scores, kickoffs, "capped_at_period_end", 0)
+    assert readings == {"earliest_match_minute": 5, "first_in_real_time": 80}
+    # Same kick-off: the readings agree.
+    same = golden_goal_by_reading(goals, scores, dict.fromkeys(scores, late),
+                                  "capped_at_period_end", 0)
+    assert same == {"earliest_match_minute": 5, "first_in_real_time": 5}
+    # A goalless round is the rules' no-goal answer under both readings.
+    assert golden_goal_by_reading(goals.head(0), {"goalless": (0, 0)}, kickoffs,
+                                  "capped_at_period_end", 0) == {
+        "earliest_match_minute": 0, "first_in_real_time": 0}
+    # Missing goal minutes: no answer at all.
+    assert golden_goal_by_reading(goals.head(1), scores, kickoffs,
+                                  "capped_at_period_end", 0) is None

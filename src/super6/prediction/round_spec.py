@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from super6.domain import FixtureSpec, MarketOdds
 from super6.ingestion.adapters.football_data_couk import fixture_key
@@ -51,12 +51,22 @@ class RoundSpec(BaseModel):
     deadline_utc: AwareDatetime
     rules_version: str
     illustrative: bool = False
-    # False when the fixtures were found automatically (e.g. in a preview article) and a
-    # person has not yet checked them against the Super 6 app. Unconfirmed rounds can be
+    # Fail-safe: a round is unconfirmed unless a person has checked its six fixtures
+    # against the Super 6 app and the file records when and how. Unconfirmed rounds can be
     # forecast but never locked.
-    confirmed: bool = True
+    confirmed: bool = False
+    confirmed_at: AwareDatetime | None = None
+    confirmed_source: str | None = None
     source_note: str | None = None
     fixtures: list[FixtureInput]
+
+    @model_validator(mode="after")
+    def _confirmation_is_recorded(self) -> RoundSpec:
+        if self.confirmed and (self.confirmed_at is None
+                               or not (self.confirmed_source or "").strip()):
+            raise ValueError("a confirmed round must record confirmed_at and confirmed_source "
+                             "(use `super6 round confirm`)")
+        return self
 
     @field_validator("round_id")
     @classmethod
@@ -94,8 +104,8 @@ def resolve_round(spec: RoundSpec, registry: TeamRegistry, rules: CompetitionRul
         out.warnings.append("ILLUSTRATIVE_DATA_ONLY")
     if not spec.confirmed:
         out.warnings.append(
-            f"ROUND_UNCONFIRMED: fixtures were found automatically; check them in the app, "
-            f"then run `super6 round confirm {spec.round_id}`")
+            f"ROUND_UNCONFIRMED: nobody has recorded checking these fixtures against the app; "
+            f"check them, then run `super6 round confirm {spec.round_id}`")
     for fx in spec.fixtures:
         try:
             home = registry.resolve(fx.home)

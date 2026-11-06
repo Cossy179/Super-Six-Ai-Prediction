@@ -121,3 +121,31 @@ def test_scheduled_fixtures_never_enter_training(
     m.loc[tail, ["home_goals", "away_goals", "result_available_at"]] = np.nan
     view = MatchHistory(m, history.odds).view(m["kickoff_utc"].max() + pd.Timedelta(days=30))
     assert not set(view.results["fixture_id"]) & set(m.loc[tail, "fixture_id"])
+
+
+def test_restrict_odds_keeps_only_the_named_timestamp_bases(
+    league: tuple[MatchHistory, SyntheticTruth]
+) -> None:
+    history, _ = league
+    cutoff, future = _split(history)
+    odds = history.odds.copy()
+    odds["availability_basis"] = "inferred"  # like historical provider files
+    target = future["fixture_id"].iloc[0]
+    observed = odds.loc[odds["fixture_id"] == target].head(1).copy()
+    observed["availability_basis"] = "observed"
+    observed["available_at"] = cutoff - pd.Timedelta(hours=3)
+    observed[["home", "draw", "away"]] = [2.0, 3.5, 4.0]
+    mixed = MatchHistory(history.matches, pd.concat([odds, observed], ignore_index=True))
+    # Without the restriction, the latest snapshot wins whatever its basis.
+    only_observed = mixed.restrict_odds({"observed"})
+    assert set(only_observed.odds["availability_basis"]) == {"observed"}
+    seen = only_observed.view(cutoff).latest_odds(target)
+    assert seen is not None and seen.home == 2.0
+    # Other fixtures have no observed odds, so the market model can't use them.
+    other = future["fixture_id"].iloc[1]
+    assert only_observed.view(cutoff).latest_odds(other) is None
+    assert mixed.view(cutoff).latest_odds(other) is not None
+    # Odds from a frame without the column are "unknown", never silently "observed".
+    assert set(history.odds["availability_basis"]) == {"unknown"}
+    with pytest.raises(ValueError, match="unknown odds bases"):
+        mixed.restrict_odds({"verified"})

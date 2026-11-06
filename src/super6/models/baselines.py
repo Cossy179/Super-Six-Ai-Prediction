@@ -120,6 +120,7 @@ class EmpiricalScoreBaseline(ScoreModel):
 
     name: ClassVar[str] = "empirical_score"
     description: ClassVar[str] = "Historical scoreline frequencies per competition"
+    explicit_tail: ClassVar[bool] = True  # pseudo-counted mass for scores beyond max_goals
 
     def __init__(self, grid: GridSettings | None = None, *, max_history_days: float = 730,
                  pseudo_count: float = 0.5, max_goals: int = 10) -> None:

@@ -57,6 +57,37 @@ official minute always replaces one worked out from goal minutes. It is also the
 way to settle under the `first_in_real_time` reading, which needs wall-clock goal times.
 Each run's Golden Goal error is stored either way.
 
+## Confirming a round's fixtures
+
+A round can be forecast at any time, but it can be **locked only once its six fixtures
+are confirmed**. Confirmed means the round file says `confirmed: true` and records when
+(`confirmed_at`) and how (`confirmed_source`) a person checked them against the Super 6
+app.
+
+- A file without those fields counts as unconfirmed. So do rounds found automatically
+  (`round fetch`, `super6 cycle`).
+- `round import` from matchups pasted out of the app records the paste as the
+  confirmation.
+- Otherwise, check the fixtures in the app and run:
+  `super6 round confirm <round-id> --source "Checked in the app by <name>"`.
+- The cycle alerts `ROUND_UNCONFIRMED` and does not lock until then.
+
+## Collecting timestamped odds
+
+Pre-match odds that we download ourselves are stored with `availability_basis:
+observed`. These are the only odds whose time is genuinely known; the historical files'
+times are inferred from the provider's schedule. They accumulate only while
+`super6 cycle` runs, hourly, via cron or the Compose `scheduler` service. The cycle
+refreshes `fixtures.csv` every `fixtures_refresh_minutes`, and each changed file adds a
+new snapshot.
+
+`super6 data status` shows how many finished fixtures have observed odds. With a season
+or more, re-test the market model on them alone:
+
+```bash
+super6 backtest --start <date> --end <date> --odds-basis observed,kickoff
+```
+
 ## Before each round
 
 1. `super6 data download && super6 data ingest`, then `super6 data status`. Check the

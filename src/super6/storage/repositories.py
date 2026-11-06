@@ -258,16 +258,16 @@ def load_history(session: Session, competitions: Iterable[str] | None = None) ->
     ostmt = select(MarketSnapshot.fixture_id, MarketSnapshot.odds_type, MarketSnapshot.source,
                    MarketSnapshot.bookmaker, MarketSnapshot.available_at, MarketSnapshot.home,
                    MarketSnapshot.draw, MarketSnapshot.away, MarketSnapshot.over25,
-                   MarketSnapshot.under25)
+                   MarketSnapshot.under25, MarketSnapshot.availability_basis)
     if comps is not None:
         ostmt = ostmt.join(Fixture, Fixture.id == MarketSnapshot.fixture_id).where(
             Fixture.competition_id.in_(comps))
     orows = session.execute(ostmt).all()
     odds = pd.DataFrame(orows, columns=["fixture_id", "odds_type", "source", "bookmaker",
                                         "available_at", "home", "draw", "away", "over25",
-                                        "under25"])
+                                        "under25", "availability_basis"])
     odds["source"] = odds["source"] + ":" + odds["bookmaker"]
-    odds = odds[ODDS_COLUMNS]
+    odds = odds[[*ODDS_COLUMNS, "availability_basis"]]
     for col in ("over25", "under25"):
         odds[col] = pd.to_numeric(odds[col], errors="coerce")
     goals = load_goal_events(session)

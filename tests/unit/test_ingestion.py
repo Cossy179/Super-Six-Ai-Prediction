@@ -63,6 +63,21 @@ def test_parse_season_file_with_odds_and_timezones() -> None:
     assert pre[0]["available_at"] == datetime(2023, 8, 11, 17, 0, tzinfo=UTC)
     assert all(c["available_at"] == m["kickoff_utc"] for c, m in zip(close, parsed.matches,
                                                                       strict=True))
+    # Played matches: the time is inferred from the provider's schedule, not observed.
+    assert {o["availability_basis"] for o in pre} == {"inferred"}
+    assert {o["availability_basis"] for o in close} == {"kickoff"}
+
+
+def test_upcoming_odds_are_observed_at_download_time() -> None:
+    upcoming = ("Div,Date,Time,HomeTeam,AwayTeam,AvgH,AvgD,AvgA,Avg>2.5,Avg<2.5\n"
+                "E0,08/06/2024,15:00,Arsenal,Chelsea,2.0,3.5,3.8,1.8,2.0\n"
+                "E0,31/05/2024,15:00,Fulham,Everton,2.4,3.3,3.0,1.9,1.9\n")  # already played
+    parsed = fdc.parse_csv(_raw(upcoming, "https://example.test/fixtures.csv"), TeamRegistry(),
+                           competition="E0", season_label="2023-24")
+    pre = [o for o in parsed.odds if o["odds_type"] == "prematch"]
+    assert len(pre) == 1  # prices for a match that had kicked off are dropped
+    assert pre[0]["availability_basis"] == "observed"
+    assert pre[0]["available_at"] == RETRIEVED
 
 
 def test_missing_time_column_is_conservative() -> None:
