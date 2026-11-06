@@ -47,6 +47,10 @@ sources:
     verification: >
       Cross-checked by round import (team resolution, exactly six fixtures, deadline = first
       kick-off). The article URL is recorded in the round file for a person to check.
+    limitation: >
+      Only usable for the current round, and only as an unconfirmed candidate. Past
+      articles mark Super 6 games inconsistently (none, some, or more than six), and
+      older articles can't be listed: /generic-news-listing/ajax/ is disallowed.
 
   openfootball:
     name: openfootball (england)
@@ -64,4 +68,6 @@ sources:
     licence_status: user_responsibility
     notes: >
       Official Super 6 fixtures and deadlines are entered manually after checking the
-      official site. The tool never scrapes or submits entries to Super 6.
+      official site, and past rounds (with the official Golden Goal answer) from the app's
+      results via `round import --history`. The tool never scrapes or submits entries to
+      Super 6; super6.skysports.com/robots.txt disallows /results/ and /league/.

@@ -82,7 +82,8 @@ class RoundImport:
     warnings: list[str] = field(default_factory=list)
 
     def to_spec_dict(self, rules_version: str, note: str,
-                     confirmation: tuple[datetime, str] | None = None) -> dict[str, Any]:
+                     confirmation: tuple[datetime, str] | None = None,
+                     official_golden_goal_minute: int | None = None) -> dict[str, Any]:
         """``confirmation`` is (when, how) a person checked the fixtures; None = unconfirmed."""
         out: dict[str, Any] = {
             "round_id": self.round_id,
@@ -92,6 +93,8 @@ class RoundImport:
         if confirmation is not None:
             out["confirmed_at"] = iso(confirmation[0])
             out["confirmed_source"] = confirmation[1]
+        if official_golden_goal_minute is not None:
+            out["official_golden_goal_minute"] = official_golden_goal_minute
         return out | {
             "source_note": note,
             "deadline_utc": iso(self.deadline_utc),
@@ -101,11 +104,13 @@ class RoundImport:
         }
 
     def to_yaml(self, rules_version: str, note: str,
-                confirmation: tuple[datetime, str] | None = None) -> str:
+                confirmation: tuple[datetime, str] | None = None,
+                official_golden_goal_minute: int | None = None) -> str:
         header = ("# Imported with `super6 round import`. Check it against the Super 6 app\n"
                   "# before relying on it, especially kick-off times marked as assumed.\n")
-        return header + yaml.safe_dump(self.to_spec_dict(rules_version, note, confirmation),
-                                       sort_keys=False)
+        return header + yaml.safe_dump(
+            self.to_spec_dict(rules_version, note, confirmation, official_golden_goal_minute),
+            sort_keys=False)
 
 
 def parse_fixture_text(text: str) -> list[ParsedPair]:
@@ -181,7 +186,10 @@ def import_round(
     start = pd.Timestamp(datetime(round_date.year, round_date.month, round_date.day,
                                   tzinfo=UK)).tz_convert(UTC) - pd.Timedelta(days=1)
     end = start + pd.Timedelta(days=MATCH_WINDOW_DAYS + 1)
-    scheduled = m.loc[(m["status"] == FixtureStatus.SCHEDULED.value)
+    # Provider fixtures in the round's window: scheduled ones for an upcoming round, and
+    # played ones too, so a past round pasted from the app gets its real kick-off times.
+    scheduled = m.loc[m["status"].isin([FixtureStatus.SCHEDULED.value,
+                                        FixtureStatus.FINISHED.value])
                       & (m["kickoff_utc"] >= start) & (m["kickoff_utc"] < end)]
     if "fixture_source" in scheduled.columns:
         # Fixtures we created from an earlier round file are not provider evidence.

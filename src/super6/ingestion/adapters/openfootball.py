@@ -7,7 +7,9 @@ The plain-text league files list each match with its scorers and minutes, for ex
                       (Hugo EKITIKE 37', ... MOHAMED SALAH 90+4';
                        Antoine SEMENYO 64', 76')
 
-Home goals come before the ``;`` and away goals after it. Own goals (``(og)``) are listed
+From 2026-27 the files put the score after the teams (``Arsenal FC  v  Coventry City FC
+3-0 (2-0)``); both layouts are read. Home goals come before the ``;`` and away goals
+after it. Own goals (``(og)``) are listed
 under the team they count for, so each side's count must equal its score. Matches where it
 doesn't are rejected. For the Premier League, goal minutes are available from 2025-26.
 Matches are joined to canonical fixtures by competition, date and teams.
@@ -31,6 +33,9 @@ _DATE = re.compile(r"^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(?P<mon>[A-Z][a-z]{2})\s
                    r"(?:\s+(?P<year>\d{4}))?\s*$")
 _MATCH = re.compile(r"^\s+(?:\d{1,2}[.:]\d{2}\s+)?(?P<home>\S.*?)\s+(?P<hg>\d+)-(?P<ag>\d+)"
                     r"(?:\s+\(\d+-\d+\))?\s+(?P<away>\S.*?)\s*$")
+# Newer layout (2026-27 onwards): "20:00  Arsenal FC  v Coventry City FC  3-0 (2-0)".
+_MATCH_V = re.compile(r"^\s+(?:\d{1,2}[.:]\d{2}\s+)?(?P<home>\S.*?)\s+v\s+(?P<away>\S.*?)\s+"
+                      r"(?P<hg>\d+)-(?P<ag>\d+)(?:\s+\(\d+-\d+\))?\s*$")
 _MINUTE = re.compile(r"(?P<min>\d{1,3})(?:\+(?P<add>\d{1,2}))?'")
 
 
@@ -95,7 +100,7 @@ def parse_league_text(text: str, first_year: int) -> ParsedGoals:
             current = date(year, month, int(d.group("day")))
             i += 1
             continue
-        m = _MATCH.match(line)
+        m = _MATCH_V.match(line) or _MATCH.match(line)
         if m and current is not None and not line.strip().startswith(("(", "#", "▪")):
             goals_text = ""
             j = i + 1

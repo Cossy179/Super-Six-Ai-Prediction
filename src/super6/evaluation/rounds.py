@@ -5,8 +5,10 @@ real deadlines), each round is forecast as of one minute before its deadline and
 scored against the ingested results. The output is labelled ``historical`` to keep it
 separate from synthetic six-match batches.
 
-Real round lists are not bundled. Super 6 publishes no archive this project may scrape,
-so add verified files to a directory such as ``rounds/history/``.
+Real round lists are not bundled. Super 6 publishes no archive this project may fetch (its
+robots.txt disallows ``/results/``), so past rounds are pasted from the app with
+``super6 round import --history`` into ``rounds/history/``, including the official Golden
+Goal answer when known.
 """
 
 from __future__ import annotations
@@ -17,8 +19,9 @@ from typing import Any
 
 import pandas as pd
 
-from super6.domain import FixtureStatus
+from super6.domain import FixtureSpec, FixtureStatus
 from super6.features.point_in_time import MatchHistory
+from super6.golden_goal.actual import golden_goal_by_reading
 from super6.ingestion.canonicalize import TeamRegistry
 from super6.models.base import ScoreModel
 from super6.prediction.optimiser import Objective, super6_points
@@ -74,8 +77,43 @@ def replay_rounds(
             out[f"{obj.value}_expected_points"] = fc.picks[obj].expected_points
         out["jackpot_all_exact"] = out["jackpot_exact"] == len(fc.fixtures) and not missing
         out["jackpot_joint_probability"] = fc.picks[Objective.JACKPOT].joint_exact_probability
+        out.update(_golden_goal_columns(spec, fc.fixtures, actual, history, rules,
+                                        fc.golden_goal.minute if fc.golden_goal else None))
         rows.append(out)
     return pd.DataFrame(rows)
+
+
+def _golden_goal_columns(spec: RoundSpec, fixtures: Sequence[FixtureSpec],
+                         actual: Mapping[str, tuple[int, int]], history: MatchHistory,
+                         rules: CompetitionRules, predicted: int | None) -> dict[str, Any]:
+    """Golden Goal answer (official if the file has it, else from goal minutes) and error.
+
+    With both an official answer and goal minutes, also records which reading of "the
+    first goal" the official answer matches (DESIGN §3.4).
+    """
+    ids = [f.fixture_id for f in fixtures]
+    readings = None
+    if all(f in actual for f in ids):
+        goals = history.goals.loc[history.goals["fixture_id"].isin(ids)]
+        readings = golden_goal_by_reading(
+            goals, {f: actual[f] for f in ids},
+            {f.fixture_id: f.kickoff_utc for f in fixtures},
+            rules.golden_goal_stoppage_time, rules.golden_goal_no_goal_minute)
+    official = spec.official_golden_goal_minute
+    answer, source = official, "official"
+    if answer is None and readings is not None:
+        answer, source = readings["earliest_match_minute"], "goal_minutes"
+    out: dict[str, Any] = {"golden_goal_actual": answer,
+                           "golden_goal_actual_source": source if answer is not None else None,
+                           "golden_goal_abs_error": (abs(predicted - answer)
+                                                     if predicted is not None
+                                                     and answer is not None else None)}
+    if official is not None and readings is not None:
+        out["golden_goal_readings_differ"] = (readings["earliest_match_minute"]
+                                              != readings["first_in_real_time"])
+        for reading, value in readings.items():
+            out[f"official_matches_{reading}"] = value == official
+    return out
 
 
 def summarise_rounds(frame: pd.DataFrame) -> dict[str, Any]:
@@ -93,4 +131,24 @@ def summarise_rounds(frame: pd.DataFrame) -> dict[str, Any]:
         },
         "jackpots": int(scored["jackpot_all_exact"].sum()),
         "blocked_or_skipped": int((~frame["status"].isin(["SCORED", "PARTIAL"])).sum()),
+        **_golden_goal_summary(scored),
     }
+
+
+def _golden_goal_summary(scored: pd.DataFrame) -> dict[str, Any]:
+    if "golden_goal_abs_error" not in scored.columns:
+        return {}
+    known = scored.loc[scored["golden_goal_abs_error"].notna()]
+    out: dict[str, Any] = {
+        "golden_goal_rounds": len(known),
+        "golden_goal_abs_error_mean": (float(known["golden_goal_abs_error"].mean())
+                                       if len(known) else None),
+    }
+    if "golden_goal_readings_differ" in scored.columns:
+        # Only rounds where the readings give different answers say which one is used.
+        evidence = scored.loc[scored["golden_goal_readings_differ"].fillna(False).astype(bool)]
+        out["reading_evidence_rounds"] = len(evidence)
+        for reading in ("earliest_match_minute", "first_in_real_time"):
+            col = f"official_matches_{reading}"
+            out[f"official_matches_{reading}"] = int(evidence[col].fillna(False).astype(bool).sum())
+    return out

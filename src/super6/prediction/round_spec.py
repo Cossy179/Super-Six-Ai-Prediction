@@ -58,6 +58,8 @@ class RoundSpec(BaseModel):
     confirmed_at: AwareDatetime | None = None
     confirmed_source: str | None = None
     source_note: str | None = None
+    # Past rounds only: the official Golden Goal answer shown in the app (0 = no goals).
+    official_golden_goal_minute: int | None = Field(default=None, ge=0, le=90)
     fixtures: list[FixtureInput]
 
     @model_validator(mode="after")

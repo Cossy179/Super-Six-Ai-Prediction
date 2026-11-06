@@ -163,3 +163,19 @@ def test_imported_rounds_record_their_confirmation(rules: CompetitionRules) -> N
         imp.to_yaml(rules.rules_version, "x", (when, "pasted from the app"))))
     assert pasted.confirmed and pasted.confirmed_at == when
     assert pasted.confirmed_source == "pasted from the app"
+
+
+def test_past_rounds_take_real_kickoffs_from_played_fixtures(rules: CompetitionRules) -> None:
+    history = _history()
+    # Fulham v Newcastle was played on 3 Oct at 14:00 UTC (15:00 UK).
+    pairs = parse_fixture_text("Fulham v Newcastle")
+    imp = import_round(pairs, _registry(), history, date(2026, 10, 3),
+                       known_competitions={"E0", "E1"})
+    (fx,) = imp.fixtures
+    assert fx.source == "provider_fixture_list"
+    assert fx.kickoff_utc == datetime(2026, 10, 3, 14, 0, tzinfo=UTC)
+    spec = RoundSpec.model_validate(yaml.safe_load(imp.to_yaml(
+        rules.rules_version, "x", (datetime(2026, 11, 6, tzinfo=UTC), "app results"), 7)))
+    assert spec.official_golden_goal_minute == 7
+    with pytest.raises(ValueError):
+        RoundSpec.model_validate(_spec_payload(rules, official_golden_goal_minute=95))
