@@ -1,0 +1,33 @@
+# Imported with `super6 round import`. Check it against the Super 6 app
+# before relying on it, especially kick-off times marked as assumed.
+round_id: super6-2026-27-round-16
+illustrative: false
+source_note: 'Found in: https://www.skysports.com/football/news/13607998/premier-league-predictions-and-jones-knows-best-bets-nottingham-forest-vs-man-city-man-utd-vs-aston-villa-and-more
+  (2026-11-06 10:25 UTC)'
+deadline_utc: '2026-11-07T15:00:00Z'
+rules_version: sky-terms-2026-27
+fixtures:
+- home: arsenal
+  away: hull
+  competition: E0
+  kickoff_utc: '2026-11-07T15:00:00Z'
+- home: fulham
+  away: newcastle
+  competition: E0
+  kickoff_utc: '2026-11-07T15:00:00Z'
+- home: nottm-forest
+  away: man-city
+  competition: E0
+  kickoff_utc: '2026-11-07T17:30:00Z'
+- home: crystal-palace
+  away: liverpool
+  competition: E0
+  kickoff_utc: '2026-11-08T14:00:00Z'
+- home: sunderland
+  away: chelsea
+  competition: E0
+  kickoff_utc: '2026-11-08T14:00:00Z'
+- home: man-united
+  away: aston-villa
+  competition: E0
+  kickoff_utc: '2026-11-08T16:30:00Z'

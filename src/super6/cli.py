@@ -133,10 +133,10 @@ def data_upcoming(days: int, competitions: str, fetch: bool) -> None:
             Fixture.kickoff_utc >= now, Fixture.kickoff_utc <= now + timedelta(days=days),
             Fixture.competition_id.in_(competitions.split(","))).order_by(
             Fixture.kickoff_utc, Fixture.competition_id)).all()
-        click.echo(_table(["kickoff (UK)", "comp", "home", "away", "kickoff_utc"], [
+        click.echo(_table(["kickoff (UK)", "comp", "home", "away", "kickoff_utc", "source"], [
             [f.kickoff_utc.astimezone(UK).strftime("%a %d %b %H:%M"), f.competition_id,
              names.get(f.home_team_id, f.home_team_id), names.get(f.away_team_id, f.away_team_id),
-             iso(f.kickoff_utc)] for f in rows]))
+             iso(f.kickoff_utc), f.source] for f in rows]))
 
 
 @data.command("status")
@@ -258,6 +258,129 @@ def predict(round_file: str, model_name: str | None, cutoff: str | None, publish
         click.echo(f"\nwrote {json_path}")
     if payload["block_reasons"]:
         sys.exit(2)
+
+
+# --------------------------------------------------------------------------- rounds
+@main.group("round")
+def round_group() -> None:
+    """Create round files."""
+
+
+@round_group.command("import")
+@click.argument("text", required=False)
+@click.option("--file", "text_file", type=click.Path(exists=True, dir_okay=False), default=None,
+              help="Read the matchups from a file instead (one per line)")
+@click.option("--round", "round_number", type=int, default=None, help="Super 6 round number")
+@click.option("--date", "round_date", default=None,
+              help="Main match day (YYYY-MM-DD, UK). Default: the coming Saturday")
+@click.option("--fetch/--no-fetch", default=True,
+              help="Refresh the provider's upcoming fixtures and odds first")
+@click.option("--predict/--no-predict", "run_predict", default=True,
+              help="Forecast the round straight away")
+@click.option("--out", "out_path", type=click.Path(dir_okay=False), default=None)
+@click.option("--source-note", default=None, hidden=True)
+@click.pass_context
+def round_import(ctx: click.Context, text: str | None, text_file: str | None,
+                 round_number: int | None, round_date: str | None, fetch: bool,
+                 run_predict: bool, out_path: str | None, source_note: str | None) -> None:
+    """Build a round file from the six matchups shown in the Super 6 app.
+
+    TEXT is the six matchups, e.g. "Fulham v Newcastle, Man Utd v Aston Villa, ...".
+    Competitions and kick-off times are filled in from the provider's fixture list; the
+    deadline is the first kick-off.
+    """
+    from datetime import date as date_cls
+
+    from super6.ingestion.round_import import (
+        RoundImportError,
+        import_round,
+        next_saturday,
+        parse_fixture_text,
+    )
+    from super6.storage.repositories import load_history, load_registry
+
+    raw = Path(text_file).read_text(encoding="utf-8") if text_file else text
+    if raw is None:
+        raw = sys.stdin.read()
+    rules = load_rules()
+    leagues = set(pipeline.leagues_config()["competitions"])
+    day = (date_cls.fromisoformat(round_date) if round_date
+           else next_saturday(datetime.now(UK).date()))
+    settings = Settings.from_env()
+    try:
+        pairs = parse_fixture_text(raw)
+        with session_scope(_engine()) as session:
+            if fetch:
+                pipeline.ingest_upcoming(session, settings.data_dir / "raw", log=click.echo)
+            history = load_history(session)
+            registry = load_registry(session, TeamRegistry.from_config())
+            imported = import_round(pairs, registry, history, day, round_number=round_number,
+                                    known_competitions=leagues)
+    except RoundImportError as exc:
+        raise click.ClickException("round not imported:\n  " + "\n  ".join(exc.problems)) from exc
+    if len(imported.fixtures) != rules.fixtures_per_round:
+        click.secho(f"note: {len(imported.fixtures)} fixtures (a full round has "
+                    f"{rules.fixtures_per_round}); the prediction will be BLOCKED", fg="yellow")
+    click.echo(_table(["fixture", "comp", "kick-off (UK)", "from"], [
+        [f"{registry.name(f.home_team)} v {registry.name(f.away_team)}", f.competition,
+         f.kickoff_utc.astimezone(UK).strftime("%a %d %b %H:%M"),
+         {"provider_fixture_list": "provider fixture list", "text": "matchup text",
+          "assumed": "ASSUMED 15:00"}[f.source]]
+        for f in imported.fixtures]))
+    first = imported.deadline_utc.astimezone(UK)
+    click.echo(f"deadline (first kick-off): {first:%a %d %b %H:%M} UK")
+    for w in imported.warnings:
+        click.secho(f"warning: {w}", fg="yellow")
+    target = Path(out_path) if out_path else project_root() / "rounds" / f"{imported.round_id}.yaml"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    stamp = f"{datetime.now(UTC):%Y-%m-%d %H:%M} UTC"
+    note = (f"{source_note} ({stamp})" if source_note
+            else f"Imported from the Super 6 app matchups on {stamp}")
+    target.write_text(imported.to_yaml(rules.rules_version, note), encoding="utf-8")
+    click.echo(f"wrote {target}")
+    if run_predict:
+        click.echo("")
+        ctx.invoke(predict, round_file=str(target), model_name=None, cutoff=None, publish=False,
+                   json_path=str(settings.reports_dir / f"{imported.round_id}.json"), save=True)
+
+
+@round_group.command("fetch")
+@click.option("--round", "round_number", type=int, default=None, help="Super 6 round number")
+@click.option("--date", "round_date", default=None,
+              help="Main match day (YYYY-MM-DD, UK). Default: the coming Saturday")
+@click.option("--predict/--no-predict", "run_predict", default=True)
+@click.pass_context
+def round_fetch(ctx: click.Context, round_number: int | None, round_date: str | None,
+                run_predict: bool) -> None:
+    """Find this round's six fixtures in public preview articles, then import them.
+
+    Reads Sky Sports' public news pages (robots.txt respected, honest User-Agent) for
+    headings marked "PLAY SUPER 6!". If exactly six are found, they go through
+    `round import`; otherwise nothing is written and you can paste them instead.
+    """
+    from datetime import date as date_cls
+
+    from super6.ingestion.round_import import next_saturday
+    from super6.ingestion.round_sources import PoliteFetcher, find_round_lines
+
+    day = (date_cls.fromisoformat(round_date) if round_date
+           else next_saturday(datetime.now(UK).date()))
+    fetcher = PoliteFetcher(raw_dir=Settings.from_env().data_dir / "raw" / "round_sources")
+    report = find_round_lines(day, fetcher)
+    for art in report.articles:
+        click.echo(f"source: {art['url']} (published {art['published_at'][:16]}, "
+                   f"{art['super6_matches']} Super 6 matches)")
+    for skipped in report.skipped:
+        click.echo(f"skipped: {skipped}")
+    if len(report.lines) != 6:
+        found = "\n  ".join(report.lines) or "(none)"
+        raise click.ClickException(
+            f"found {len(report.lines)} Super 6 matches, expected 6:\n  {found}\n"
+            "Paste the six from the app instead: super6 round import \"Home v Away, ...\"")
+    sources = ", ".join(a["url"] for a in report.articles if a["super6_matches"])
+    ctx.invoke(round_import, text="\n".join(report.lines), text_file=None,
+               round_number=round_number, round_date=day.isoformat(), fetch=True,
+               run_predict=run_predict, out_path=None, source_note=f"Found in: {sources}")
 
 
 # --------------------------------------------------------------------------- runs

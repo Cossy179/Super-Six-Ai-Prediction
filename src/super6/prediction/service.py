@@ -57,6 +57,7 @@ from super6.storage.repositories import (
 from super6.timeutil import iso
 
 STALE_RESULTS_DAYS = 10
+ROUND_FILE_SOURCE = "round_file"
 STALE_TEAM_DAYS = 28
 
 
@@ -325,6 +326,9 @@ def _upsert_round(session: Session, resolved: ResolvedRound) -> Super6Round:
         for rf in list(rnd.fixtures):
             session.delete(rf)
         session.flush()
+        # The relationship still holds the deleted rows in memory; reload it so the links
+        # below are recreated rather than skipped as "already present".
+        session.expire(rnd, ["fixtures"])
     if rnd is None:
         rnd = Super6Round(id=spec.round_id, deadline_utc=spec.deadline_utc,
                           rules_version=spec.rules_version, status="OPEN",
@@ -341,7 +345,8 @@ def _upsert_round(session: Session, resolved: ResolvedRound) -> Super6Round:
             session.add(Fixture(id=fx.fixture_id, competition_id=fx.competition, season=season,
                                 home_team_id=fx.home_team, away_team_id=fx.away_team,
                                 kickoff_utc=fx.kickoff_utc, kickoff_time_known=True,
-                                neutral=fx.neutral, status=FixtureStatus.SCHEDULED.value))
+                                neutral=fx.neutral, status=FixtureStatus.SCHEDULED.value,
+                                source=ROUND_FILE_SOURCE))
             session.flush()
         if fx.fixture_id not in existing:
             session.add(Super6RoundFixture(round_id=rnd.id, fixture_id=fx.fixture_id,

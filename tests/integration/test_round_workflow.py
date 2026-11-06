@@ -251,3 +251,24 @@ def test_illustrative_rounds_are_never_saved(engine: Engine, rules: CompetitionR
     with session_scope(engine) as s:
         assert s.scalar(select(Super6Round.id)) is None
         assert s.scalar(select(Fixture.id)) is None
+
+
+def test_updating_a_round_keeps_its_fixture_links(
+    engine: Engine, rules: CompetitionRules, league: tuple[MatchHistory, SyntheticTruth]
+) -> None:
+    from super6.storage.models import Super6RoundFixture
+
+    history, _ = league
+    reg = _setup(engine, history)
+    kickoff = (history.matches["kickoff_utc"].max() + pd.Timedelta(days=7)).to_pydatetime()
+    model = build_model("poisson")
+    for note in ("first import", "re-imported with a new note"):
+        resolved = resolve_round(_spec(rules, kickoff, source_note=note), reg, rules, {"SYN"})
+        fc = forecast_round(history, resolved, kickoff - timedelta(hours=2), model, rules,
+                            {"n_simulations": 1000})
+        with session_scope(engine) as s:
+            persist_forecast(s, resolved, fc)
+        with session_scope(engine) as s:
+            links = s.scalars(select(Super6RoundFixture.fixture_id).where(
+                Super6RoundFixture.round_id == "test-round-1")).all()
+            assert sorted(links) == sorted(f.fixture_id for f in resolved.fixtures)

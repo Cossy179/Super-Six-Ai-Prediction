@@ -38,6 +38,9 @@ See `src/super6/storage/models.py` for column types. Key tables:
 - `data_quality_issues`: rejected/quarantined rows and warnings, such as
   `RESULT_CONFLICT` (a later file disagrees with a stored result; the original is kept)
   and `POSSIBLE_DUPLICATE_TEAM` (a new team name resembles an existing one).
+- `fixtures.source`: where the row came from. Either the data provider
+  (`football_data_couk`), or `round_file` when it exists only because a Super 6 round file
+  listed it. A later provider listing replaces `round_file` with the provider name.
 - `fixtures`, `fixture_results`, `market_snapshots`, `fixture_stats`, `goal_events`
   (empty until a licensed event feed exists).
 - `super6_rounds`, `super6_round_fixtures`: the manually verified round.

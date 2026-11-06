@@ -151,14 +151,18 @@ def ingest_parsed(session: Session, raw: RawFile, parsed: ParsedFile, licence_id
                 "id": m["fixture_id"], "competition_id": m["competition"], "season": m["season"],
                 "home_team_id": m["home_team"], "away_team_id": m["away_team"],
                 "kickoff_utc": m["kickoff_utc"], "kickoff_time_known": m["kickoff_time_known"],
-                "neutral": False, "status": m["status"],
+                "neutral": False, "status": m["status"], "source": raw.source,
             })
         elif fx.status == FixtureStatus.SCHEDULED.value and (
             fx.kickoff_utc != m["kickoff_utc"] or fx.status != m["status"]
+            or fx.source != raw.source
         ):
+            # A provider listing (re)confirms the fixture, including one first created
+            # from a round file.
             fx.kickoff_utc = m["kickoff_utc"]
             fx.kickoff_time_known = m["kickoff_time_known"]
             fx.status = m["status"]
+            fx.source = raw.source
             stats.fixtures_updated += 1
     for chunk in _chunks(new_rows):
         session.execute(insert(Fixture), chunk)
@@ -242,9 +246,10 @@ def load_history(session: Session, competitions: Iterable[str] | None = None) ->
     stats = pd.DataFrame(session.execute(sstmt).all(), columns=["fixture_id", *STAT_COLUMNS])
     stats = stats.drop_duplicates("fixture_id", keep="first")
     matches = matches.merge(stats, on="fixture_id", how="left")
-    if "neutral" not in matches.columns:
-        neutral = dict(session.execute(select(Fixture.id, Fixture.neutral)).all())
-        matches["neutral"] = matches["fixture_id"].map(neutral).fillna(False)
+    meta = {fid: (neutral, source) for fid, neutral, source in
+            session.execute(select(Fixture.id, Fixture.neutral, Fixture.source)).all()}
+    matches["neutral"] = matches["fixture_id"].map(lambda f: meta.get(f, (False, ""))[0])
+    matches["fixture_source"] = matches["fixture_id"].map(lambda f: meta.get(f, (False, ""))[1])
     # A FINISHED status without a stored result is not usable as a result.
     no_result = matches["home_goals"].isna() & (matches["status"] == FixtureStatus.FINISHED)
     matches.loc[no_result, "status"] = FixtureStatus.SCHEDULED.value
