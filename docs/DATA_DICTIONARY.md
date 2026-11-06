@@ -25,6 +25,7 @@ training.
 | `fixture_results.result_available_at` | kick-off + 135 min, or 23:59:59 local on the match day when the kick-off time is unknown | A result can only inform forecasts made after it was public |
 | `market_snapshots.available_at` (prematch) | 18:00 UK on Friday (Fri–Mon games) or Tuesday (Tue–Thu games), or one hour before kick-off if earlier. For upcoming fixtures, the download time | Provider's published collection schedule; chosen to be late rather than early |
 | `market_snapshots.available_at` (closing) | kick-off | Closing odds are never available before the deadline |
+| `market_snapshots.availability_basis` | `observed`: our download time (upcoming fixtures); `inferred`: the provider's collection schedule (played matches in season files); `kickoff`: closing odds; `unknown`: pre-match prices captured after kick-off (never usable); `declared` (in memory only): odds typed into a round file | Says how much to trust each timestamp. `super6 backtest --odds-basis observed,kickoff` evaluates on observed prices only |
 | `fixture_stats.available_at` | same as the result | Shots and xG are post-match information |
 | `goal_events` | same as the match's result | Goal minutes are post-match information. A view only sees the goals of the results it can see (`PointInTimeView.goal_events`) |
 

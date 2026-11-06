@@ -22,7 +22,7 @@ from super6.config import code_version
 from super6.domain import FixtureSpec, FixtureStatus, MarketOdds
 from super6.evaluation.metrics import actual_result, exact_log_loss, ranked_probability_score
 from super6.features.point_in_time import GOAL_COLUMNS, MatchHistory, empty_odds_frame
-from super6.golden_goal.actual import first_goal_minutes, round_golden_goal
+from super6.golden_goal.actual import golden_goal_by_reading
 from super6.golden_goal.profile import profile_from_config
 from super6.golden_goal.simulate import GoldenGoalFixture, GoldenGoalForecast, simulate_golden_goal
 from super6.ingestion.canonicalize import TeamRegistry
@@ -57,7 +57,7 @@ from super6.storage.repositories import (
     stable_hash,
     transition_run,
 )
-from super6.timeutil import iso
+from super6.timeutil import ensure_utc, iso
 
 STALE_RESULTS_DAYS = 10
 ROUND_FILE_SOURCE = "round_file"
@@ -100,7 +100,8 @@ def _odds_frame(odds: Mapping[str, MarketOdds]) -> pd.DataFrame:
     return pd.DataFrame([
         {"fixture_id": fid, "odds_type": o.odds_type, "source": o.source,
          "available_at": o.available_at, "home": o.home, "draw": o.draw, "away": o.away,
-         "over25": o.over25, "under25": o.under25}
+         "over25": o.over25, "under25": o.under25,
+         "availability_basis": "declared"}  # entered in the round file by a person
         for fid, o in odds.items()
     ])
 
@@ -152,8 +153,11 @@ def forecast_round(
     predictions: list[Prediction] = []
     for fx in resolved.fixtures:
         pred = fitted.predict(fx, view)
-        problems = [p for p in pred.distribution.invariant_violations(model.grid.tail_tolerance)
-                    if not p.startswith("TAIL_ABOVE_TOLERANCE")]
+        problems = pred.distribution.invariant_violations(model.grid.tail_tolerance)
+        if model.explicit_tail:
+            tail = [p for p in problems if p.startswith("TAIL_ABOVE_TOLERANCE")]
+            warnings.extend(f"{fx.fixture_id}:EXPLICIT_{p}" for p in tail)
+            problems = [p for p in problems if p not in tail]
         if problems:
             blocks.append(f"PROBABILITY_INTEGRITY:{fx.fixture_id}:{','.join(problems)}")
         predictions.append(pred)
@@ -442,7 +446,8 @@ def lock_run(session: Session, run_id: str, now: datetime | None = None) -> Pred
         raise LockError(f"no run {run_id}")
     rnd = session.get(Super6Round, run.round_id)
     assert rnd is not None
-    if not rnd.spec.get("confirmed", True):
+    if not (rnd.spec.get("confirmed") and rnd.spec.get("confirmed_at")
+            and rnd.spec.get("confirmed_source")):
         raise LockError(f"round {rnd.id}'s fixtures are unconfirmed; check them against the app "
                         f"and run `super6 round confirm {rnd.id}` first")
     if now > rnd.deadline_utc:
@@ -468,19 +473,18 @@ class Settlement:
     metrics: dict[str, dict[str, float]]
 
 
-def _golden_goal_from_events(session: Session, results: Mapping[str, tuple[int, int]],
-                             rules: CompetitionRules) -> int | None:
-    """The round's Golden Goal from stored goal minutes, or None if it can't be known."""
-    if rules.golden_goal_first_goal != "earliest_match_minute":
-        return None  # needs wall-clock goal times, which no stored source has
+def _golden_goal_readings(session: Session, rnd: Super6Round,
+                          results: Mapping[str, tuple[int, int]], rules: CompetitionRules
+                          ) -> dict[str, int | None] | None:
+    """The round's Golden Goal under each reading, from stored goal minutes (or None)."""
     rows = session.execute(select(GoalEvent.fixture_id, GoalEvent.period, GoalEvent.match_minute,
                                   GoalEvent.stoppage_minute, GoalEvent.team_side)
                            .where(GoalEvent.fixture_id.in_(list(results)))).all()
     goals = pd.DataFrame(rows, columns=GOAL_COLUMNS)
-    first = first_goal_minutes(goals, results, rules.golden_goal_stoppage_time)
-    if first.uncovered:
-        return None
-    return round_golden_goal(first.minutes, rules.golden_goal_no_goal_minute)
+    kickoffs = {fid: ensure_utc(ko) for fid, ko in session.execute(
+        select(Fixture.id, Fixture.kickoff_utc).where(Fixture.id.in_(list(results)))).all()}
+    return golden_goal_by_reading(goals, results, kickoffs, rules.golden_goal_stoppage_time,
+                                  rules.golden_goal_no_goal_minute)
 
 
 def settle_round(session: Session, round_id: str, rules: CompetitionRules,
@@ -507,8 +511,12 @@ def settle_round(session: Session, round_id: str, rules: CompetitionRules,
                if r.fixture_id}
     missing = [f for f in fixture_ids if f not in results]
     gg_source = "official" if golden_goal_minute is not None else None
-    if golden_goal_minute is None and not missing:
-        golden_goal_minute = _golden_goal_from_events(session, results, rules)
+    readings = _golden_goal_readings(session, rnd, results, rules) if not missing else None
+    # Only the earliest-minute reading is exact from goal minutes; the real-time reading
+    # needs wall-clock goal times, so it is settled from the official answer only.
+    if (golden_goal_minute is None and readings is not None
+            and rules.golden_goal_first_goal == "earliest_match_minute"):
+        golden_goal_minute = readings["earliest_match_minute"]
         gg_source = "goal_events" if golden_goal_minute is not None else None
     out: list[Settlement] = []
     runs = session.scalars(select(PredictionRun).where(
@@ -553,6 +561,11 @@ def settle_round(session: Session, round_id: str, rules: CompetitionRules,
                                       "predicted_minute": float(gg.minute),
                                       "abs_error": float(abs(gg.minute - golden_goal_minute)),
                                       "from_goal_events": float(gg_source == "goal_events")}
+            if gg_source == "official" and readings is not None:
+                # Evidence for which reading of "the first goal" the operator uses.
+                for reading, answer in readings.items():
+                    metrics["golden_goal"][f"official_matches_{reading}"] = float(
+                        answer == golden_goal_minute)
         have = {(e.mode, e.metric): e for e in session.scalars(
             select(Evaluation).where(Evaluation.run_id == run.id))}
         for group, vals in metrics.items():

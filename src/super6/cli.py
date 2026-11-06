@@ -176,7 +176,13 @@ def data_goals(competitions: str, first_season: str) -> None:
 @data.command("status")
 def data_status() -> None:
     """Coverage, freshness and data-quality summary."""
-    from super6.storage.models import DataQualityIssue, Fixture, FixtureResult, SourceSnapshot
+    from super6.storage.models import (
+        DataQualityIssue,
+        Fixture,
+        FixtureResult,
+        MarketSnapshot,
+        SourceSnapshot,
+    )
 
     with session_scope(_engine()) as session:
         rows = session.execute(
@@ -187,6 +193,20 @@ def data_status() -> None:
             .order_by(Fixture.competition_id, Fixture.season)).all()
         click.echo(_table(["comp", "season", "results", "latest result (UTC)"],
                           [[c, s, n, iso(t)] for c, s, n, t in rows]))
+        odds = session.execute(
+            select(MarketSnapshot.odds_type, MarketSnapshot.availability_basis, func.count(),
+                   func.count(func.distinct(MarketSnapshot.fixture_id)))
+            .group_by(MarketSnapshot.odds_type, MarketSnapshot.availability_basis)
+            .order_by(MarketSnapshot.odds_type, MarketSnapshot.availability_basis)).all()
+        click.echo("\nodds snapshots by how their timestamp is known (observed = downloaded by "
+                   "us before kick-off; inferred = provider schedule):")
+        click.echo(_table(["type", "timestamp basis", "snapshots", "fixtures"],
+                          [list(r) for r in odds]))
+        observed_played = session.scalar(
+            select(func.count(func.distinct(MarketSnapshot.fixture_id)))
+            .join(FixtureResult, FixtureResult.fixture_id == MarketSnapshot.fixture_id)
+            .where(MarketSnapshot.availability_basis == "observed"))
+        click.echo(f"finished fixtures with observed pre-match odds: {observed_played}")
         snaps = session.scalar(select(func.count(SourceSnapshot.id)))
         issues = session.execute(select(DataQualityIssue.severity, DataQualityIssue.code,
                                         func.count()).group_by(DataQualityIssue.severity,
@@ -373,10 +393,13 @@ def round_import(ctx: click.Context, text: str | None, text_file: str | None,
     stamp = f"{datetime.now(UTC):%Y-%m-%d %H:%M} UTC"
     note = (f"{source_note} ({stamp})" if source_note
             else f"Imported from the Super 6 app matchups on {stamp}")
-    confirmed = source_note is None  # pasted from the app = confirmed; fetched = not yet
-    target.write_text(imported.to_yaml(rules.rules_version, note, confirmed=confirmed),
+    # Pasted from the app = confirmed by the person pasting; fetched = not yet.
+    confirmation = (None if source_note is not None else
+                    (datetime.now(UTC), "Six matchups pasted from the Super 6 app "
+                                        "(`super6 round import`)"))
+    target.write_text(imported.to_yaml(rules.rules_version, note, confirmation),
                       encoding="utf-8")
-    if not confirmed:
+    if confirmation is None:
         click.secho("These fixtures were found automatically and may be wrong. Check them in "
                     f"the Super 6 app, then run `super6 round confirm {imported.round_id}`.\n"
                     "Until then the forecast can't be locked.", fg="yellow")
@@ -428,19 +451,25 @@ def round_fetch(ctx: click.Context, round_number: int | None, round_date: str | 
 
 @round_group.command("confirm")
 @click.argument("round_id")
-def round_confirm(round_id: str) -> None:
-    """Mark a fetched round's fixtures as checked against the Super 6 app."""
+@click.option("--source", "confirmed_source", default="Checked against the Super 6 app",
+              show_default=True, help="How the six fixtures were checked (recorded in the file)")
+def round_confirm(round_id: str, confirmed_source: str) -> None:
+    """Record that a round's fixtures were checked against the Super 6 app."""
     import yaml as yaml_mod
+
+    from super6.prediction.round_spec import RoundSpec
 
     path = project_root() / "rounds" / f"{round_id}.yaml"
     if not path.exists():
         raise click.ClickException(f"no round file {path}")
     data = yaml_mod.safe_load(path.read_text(encoding="utf-8"))
     load_round(path)  # validate before changing anything
-    data["confirmed"] = True
+    data.update(confirmed=True, confirmed_at=iso(datetime.now(UTC)),
+                confirmed_source=confirmed_source)
+    RoundSpec.model_validate(data)
     path.write_text("# Fixtures confirmed against the Super 6 app.\n"
                     + yaml_mod.safe_dump(data, sort_keys=False), encoding="utf-8")
-    click.echo(f"{round_id} confirmed; the next forecast can be locked")
+    click.echo(f"{round_id} confirmed ({confirmed_source}); the next forecast can be locked")
 
 
 # --------------------------------------------------------------------------- cycle
@@ -681,6 +710,12 @@ def settle(round_id: str, allow_missing: bool, golden_goal_minute: int | None) -
             source = "goal minutes" if g["from_goal_events"] else "official"
             click.echo(f"  Golden Goal: predicted {g['predicted_minute']:g}, actual "
                        f"{g['actual_minute']:g} ({source}), error {g['abs_error']:g}")
+            matches = {k.removeprefix("official_matches_"): v for k, v in g.items()
+                       if k.startswith("official_matches_")}
+            if matches:
+                agree = [k for k, v in matches.items() if v] or ["neither reading"]
+                click.echo(f"  The official answer matches: {', '.join(agree)} "
+                           f"(rules assume {rules.golden_goal_first_goal})")
         else:
             click.echo("  Golden Goal: not settled (pass --golden-goal-minute, or run "
                        "`data goals` once goal minutes are published)")
@@ -695,10 +730,14 @@ def settle(round_id: str, allow_missing: bool, golden_goal_minute: int | None) -
 @click.option("--competitions", default="E0,E1,E2,E3,SC0", show_default=True,
               help="Fixtures to forecast (training always uses all ingested competitions)")
 @click.option("--refit-every-days", type=float, default=None)
+@click.option("--odds-basis", default=None,
+              help="Use only odds whose timestamps are known this way, e.g. 'observed,kickoff' "
+                   "to exclude prices with schedule-inferred timestamps (default: all)")
 @click.option("--label", default=None)
 @click.option("--out", "out_dir", type=click.Path(file_okay=False), default=None)
 def backtest(start: str, end: str, models: str, reference: str, competitions: str,
-             refit_every_days: float | None, label: str | None, out_dir: str | None) -> None:
+             refit_every_days: float | None, odds_basis: str | None, label: str | None,
+             out_dir: str | None) -> None:
     """Chronological walk-forward backtest against baselines."""
     from super6.evaluation.replay import synthetic_rounds, walk_forward
     from super6.evaluation.reports import build_report, write_report
@@ -715,6 +754,9 @@ def backtest(start: str, end: str, models: str, reference: str, competitions: st
     refit = refit_every_days if refit_every_days is not None else bt.get("refit_every_days", 1)
     with session_scope(_engine()) as session:
         history = load_history(session)
+    bases = {b.strip() for b in odds_basis.split(",") if b.strip()} if odds_basis else None
+    if bases is not None:
+        history = history.restrict_odds(bases)
     start_ts, end_ts = pd.Timestamp(start, tz="UTC"), pd.Timestamp(end, tz="UTC")
     rows = walk_forward(history, built, rules, start_ts, end_ts, comps, refit,
                         progress=lambda m: click.echo(m, err=True))
@@ -727,6 +769,7 @@ def backtest(start: str, end: str, models: str, reference: str, competitions: st
     label = label or f"{start}_{end}"
     meta = {"label": label, "start": start, "end": end, "competitions": comps,
             "models": names, "reference": reference, "refit_every_days": refit,
+            "odds_basis": sorted(bases) if bases is not None else "all",
             "rules_version": rules.rules_version, "rules_verified": rules.verified,
             "code_version": code_version(), "model_config": {n: built[n].config for n in names},
             "synthetic_competitions": sr.get("competitions", ["E0", "E1"])}

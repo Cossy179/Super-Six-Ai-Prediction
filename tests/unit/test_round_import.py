@@ -127,3 +127,39 @@ def test_round_file_fixtures_are_not_mistaken_for_provider_listings() -> None:
                        MatchHistory(m), SAT, known_competitions={"E0", "E1"})
     assert imp.fixtures[0].source == "text"
     assert imp.fixtures[0].kickoff_utc == datetime(2026, 11, 8, 16, 30, tzinfo=UTC)
+
+
+def _spec_payload(rules: CompetitionRules, **extra: object) -> dict[str, object]:
+    return {"round_id": "test-round", "deadline_utc": "2026-11-07T15:00:00Z",
+            "rules_version": rules.rules_version,
+            "fixtures": [{"home": "fulham", "away": "newcastle", "competition": "E0",
+                          "kickoff_utc": "2026-11-07T15:00:00Z"}]} | extra
+
+
+def test_rounds_are_unconfirmed_unless_a_confirmation_is_recorded(
+        rules: CompetitionRules) -> None:
+    # A file that says nothing about confirmation is unconfirmed (fail-safe).
+    assert RoundSpec.model_validate(_spec_payload(rules)).confirmed is False
+    # A confirmation must say when and how the fixtures were checked.
+    with pytest.raises(ValueError, match="confirmed_at and confirmed_source"):
+        RoundSpec.model_validate(_spec_payload(rules, confirmed=True))
+    with pytest.raises(ValueError, match="confirmed_at and confirmed_source"):
+        RoundSpec.model_validate(_spec_payload(rules, confirmed=True,
+                                               confirmed_at="2026-11-06T12:00:00Z",
+                                               confirmed_source="  "))
+    ok = RoundSpec.model_validate(_spec_payload(
+        rules, confirmed=True, confirmed_at="2026-11-06T12:00:00Z",
+        confirmed_source="Checked against the Super 6 app"))
+    assert ok.confirmed and ok.confirmed_at == datetime(2026, 11, 6, 12, tzinfo=UTC)
+
+
+def test_imported_rounds_record_their_confirmation(rules: CompetitionRules) -> None:
+    pairs = parse_fixture_text("Fulham v Newcastle")
+    imp = import_round(pairs, _registry(), _history(), SAT, known_competitions={"E0", "E1"})
+    fetched = RoundSpec.model_validate(yaml.safe_load(imp.to_yaml(rules.rules_version, "x")))
+    assert fetched.confirmed is False and fetched.confirmed_at is None
+    when = datetime(2026, 11, 6, 9, 30, tzinfo=UTC)
+    pasted = RoundSpec.model_validate(yaml.safe_load(
+        imp.to_yaml(rules.rules_version, "x", (when, "pasted from the app"))))
+    assert pasted.confirmed and pasted.confirmed_at == when
+    assert pasted.confirmed_source == "pasted from the app"

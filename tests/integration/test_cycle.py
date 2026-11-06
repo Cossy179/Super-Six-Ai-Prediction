@@ -54,6 +54,8 @@ def world(engine: Engine, league: tuple[MatchHistory, SyntheticTruth], tmp_path:
 def _write_round(world: dict[str, Any], rules: CompetitionRules, round_id: str = "test-r1") -> Path:
     spec = {"round_id": round_id, "deadline_utc": iso(world["kickoff"]),
             "rules_version": rules.rules_version, "illustrative": False,
+            "confirmed": True, "confirmed_at": iso(world["kickoff"] - timedelta(days=3)),
+            "confirmed_source": "test",
             "fixtures": [{"home": h, "away": a, "competition": "SYN",
                           "kickoff_utc": iso(world["kickoff"])} for h, a in PAIRS]}
     path = world["rounds"] / f"{round_id}.yaml"
@@ -152,6 +154,9 @@ def test_full_round_from_forecast_to_settlement(engine: Engine, rules: Competiti
         gg = next(r for r in out if r.run_id == locked_run).metrics["golden_goal"]
         assert gg["actual_minute"] == 7 and gg["abs_error"] == abs(gg["predicted_minute"] - 7)
     assert gg_eval("actual_minute") == 7 and gg_eval("from_goal_events") == 0
+    # Goal minutes say 11 under either reading, so the official 7 matches neither.
+    assert gg_eval("official_matches_earliest_match_minute") == 0
+    assert gg_eval("official_matches_first_in_real_time") == 0
     with session_scope(engine) as s:
         assert s.scalar(select(func.count(Evaluation.id)).where(
             Evaluation.mode == "golden_goal")) >= 3

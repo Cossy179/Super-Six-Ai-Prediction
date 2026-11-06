@@ -51,6 +51,8 @@ def main() -> None:
                     help="predictions.csv.gz from an earlier run whose models are unchanged")
     ap.add_argument("--merge-models", default="",
                     help="comma-separated models to take from --merge")
+    ap.add_argument("--odds-basis", default=None,
+                    help="only odds whose timestamps are known this way, e.g. observed,kickoff")
     args = ap.parse_args()
     defaults = load_model_defaults()
     models, specs = {}, {}
@@ -60,6 +62,8 @@ def main() -> None:
         specs[label] = {"model": name, "overrides": overrides}
     with session_scope(make_engine(Settings.from_env().database_url)) as s:
         history = load_history(s)
+    if args.odds_basis:
+        history = history.restrict_odds({b for b in args.odds_basis.split(",") if b})
     rules = load_rules()
     comps = args.competitions.split(",")
     rows = walk_forward(history, models, rules, pd.Timestamp(args.start, tz="UTC"),
@@ -84,6 +88,7 @@ def main() -> None:
     rounds = synthetic_rounds(rows, sr["competitions"], sr["weekday"], sr["local_kickoff"],
                               sr["fixtures_per_round"], sr["seed"])
     meta = {"label": args.label, "start": args.start, "end": args.end, "competitions": comps,
+            "odds_basis": args.odds_basis or "all",
             "models": specs, "reference": args.reference,
             "refit_every_days": {k: max(defaults["backtest"]["refit_every_days"],
                                         m.refit_every_days or 0) for k, m in models.items()},

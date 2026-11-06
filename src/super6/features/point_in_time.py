@@ -49,6 +49,10 @@ ODDS_COLUMNS = [
     "under25",
 ]
 
+# How each odds snapshot's available_at is known (optional column, "unknown" if absent):
+# observed (our download time), inferred (provider schedule), kickoff (closing), declared
+# (entered in a round file).
+ODDS_BASES = ("observed", "inferred", "kickoff", "declared", "unknown")
 # Goal minutes (Golden Goal model). Like statistics, they become visible with the result.
 GOAL_COLUMNS = ["fixture_id", "period", "match_minute", "stoppage_minute", "team_side"]
 
@@ -106,6 +110,9 @@ class MatchHistory:
         self.matches = m.sort_values(["kickoff_utc", "fixture_id"]).reset_index(drop=True)
         o = self.odds.copy()
         o["available_at"] = pd.to_datetime(o["available_at"], utc=True)
+        if "availability_basis" not in o.columns:
+            o["availability_basis"] = "unknown"
+        o["availability_basis"] = o["availability_basis"].fillna("unknown").astype(str)
         self.odds = o.sort_values(["fixture_id", "available_at"]).reset_index(drop=True)
         missing = [c for c in GOAL_COLUMNS if c not in self.goals.columns]
         if missing:
@@ -125,10 +132,23 @@ class MatchHistory:
         new_matches = self.matches if matches is None else pd.concat(
             [self.matches, matches.reindex(columns=self.matches.columns)], ignore_index=True
         )
-        new_odds = self.odds if odds is None or odds.empty else pd.concat(
-            [self.odds, odds[ODDS_COLUMNS]], ignore_index=True
-        )
+        extra = None if odds is None or odds.empty else odds[
+            [c for c in (*ODDS_COLUMNS, "availability_basis") if c in odds.columns]]
+        new_odds = self.odds if extra is None else pd.concat([self.odds, extra],
+                                                             ignore_index=True)
         return MatchHistory(new_matches, new_odds, self.goals)
+
+    def restrict_odds(self, bases: set[str]) -> MatchHistory:
+        """The same history keeping only odds whose timestamps are known by ``bases``.
+
+        ``restrict_odds({"observed", "kickoff"})`` evaluates models on prices we actually
+        downloaded before each cutoff, without the schedule-inferred historical timestamps.
+        """
+        unknown = bases - set(ODDS_BASES)
+        if unknown:
+            raise ValueError(f"unknown odds bases {sorted(unknown)}; choose from {ODDS_BASES}")
+        keep = self.odds["availability_basis"].isin(bases)
+        return MatchHistory(self.matches, self.odds.loc[keep], self.goals)
 
     def view(self, cutoff: datetime | pd.Timestamp | str) -> PointInTimeView:
         return PointInTimeView(self, cutoff)

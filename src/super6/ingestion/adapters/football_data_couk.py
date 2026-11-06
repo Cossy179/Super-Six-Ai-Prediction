@@ -360,7 +360,8 @@ def parse_csv(
                  # Played match: provider's collection schedule. Upcoming fixture: the
                  # odds were observed when we downloaded the file.
                  "available_at": prematch_odds_available_at(ko) if finished
-                 else min(raw.retrieved_at, ko), "home": pre[0],
+                 else min(raw.retrieved_at, ko),
+                 "availability_basis": "inferred" if finished else "observed", "home": pre[0],
                  "draw": pre[1], "away": pre[2], "over25": ou[0] if ou else None,
                  "under25": ou[1] if ou else None}
             )
@@ -369,7 +370,8 @@ def parse_csv(
             ou = _first_odds(row, CLOSING_OU)
             out.odds.append(
                 {"fixture_id": fixture_id, "odds_type": "closing", "bookmaker": close[3],
-                 "available_at": ko, "home": close[0], "draw": close[1], "away": close[2],
+                 "available_at": ko, "availability_basis": "kickoff", "home": close[0],
+                 "draw": close[1], "away": close[2],
                  "over25": ou[0] if ou else None, "under25": ou[1] if ou else None}
             )
         if finished:

@@ -81,12 +81,18 @@ class RoundImport:
     fixtures: list[ImportedFixture]
     warnings: list[str] = field(default_factory=list)
 
-    def to_spec_dict(self, rules_version: str, note: str, confirmed: bool = True
-                     ) -> dict[str, Any]:
-        return {
+    def to_spec_dict(self, rules_version: str, note: str,
+                     confirmation: tuple[datetime, str] | None = None) -> dict[str, Any]:
+        """``confirmation`` is (when, how) a person checked the fixtures; None = unconfirmed."""
+        out: dict[str, Any] = {
             "round_id": self.round_id,
             "illustrative": False,
-            "confirmed": confirmed,
+            "confirmed": confirmation is not None,
+        }
+        if confirmation is not None:
+            out["confirmed_at"] = iso(confirmation[0])
+            out["confirmed_source"] = confirmation[1]
+        return out | {
             "source_note": note,
             "deadline_utc": iso(self.deadline_utc),
             "rules_version": rules_version,
@@ -94,10 +100,11 @@ class RoundImport:
                           "kickoff_utc": iso(f.kickoff_utc)} for f in self.fixtures],
         }
 
-    def to_yaml(self, rules_version: str, note: str, confirmed: bool = True) -> str:
+    def to_yaml(self, rules_version: str, note: str,
+                confirmation: tuple[datetime, str] | None = None) -> str:
         header = ("# Imported with `super6 round import`. Check it against the Super 6 app\n"
                   "# before relying on it, especially kick-off times marked as assumed.\n")
-        return header + yaml.safe_dump(self.to_spec_dict(rules_version, note, confirmed),
+        return header + yaml.safe_dump(self.to_spec_dict(rules_version, note, confirmation),
                                        sort_keys=False)
 
 

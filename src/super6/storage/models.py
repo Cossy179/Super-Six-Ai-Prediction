@@ -200,6 +200,11 @@ class MarketSnapshot(Base):
     odds_type: Mapped[str] = mapped_column(String(16))  # prematch | closing
     bookmaker: Mapped[str] = mapped_column(String(32))
     available_at: Mapped[datetime]
+    # How available_at is known: "observed" (we downloaded these prices at that time),
+    # "inferred" (from the provider's published collection schedule; historical files),
+    # or "kickoff" (closing prices, available at kick-off). See DATA_DICTIONARY.md.
+    availability_basis: Mapped[str] = mapped_column(String(16), default="inferred",
+                                                    server_default="inferred")
     home: Mapped[float] = mapped_column(Float)
     draw: Mapped[float] = mapped_column(Float)
     away: Mapped[float] = mapped_column(Float)

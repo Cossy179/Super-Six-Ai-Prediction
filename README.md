@@ -8,8 +8,9 @@ probability distribution over scorelines for each match, then picks scores for t
   under the 5/2/0 table).
 - **Jackpot mode**: maximise the chance that all six exact scores are right.
 
-The full technical design is in [`DESIGN.md`](DESIGN.md). This repository currently
-implements **Phase 1** (the statistical core): see [Status](#status).
+The full technical design is in [`DESIGN.md`](DESIGN.md). Phases 1–3 are implemented:
+the statistical core, the evaluated models, and round automation with the Golden Goal.
+See [Status](#status).
 
 > Forecasts are estimates, never guarantees. Even the most likely exact score usually has
 > only a 10–15% chance, and six together are far less likely. This is an analysis tool for
@@ -95,8 +96,10 @@ yourself.
 4. **Predict**: `super6 predict rounds/<round>.yaml --json reports/<round>.json`. The run is
    stored with its inputs fingerprint, model version and rules version. It is `BLOCKED` if
    the fixtures, rules or probabilities fail checks.
-5. **Lock** the run you are going to use, before the deadline: `super6 runs lock <run-id>`.
-   A locked run cannot be edited or deleted.
+5. **Confirm and lock.** Check the six fixtures in the app, then run
+   `super6 round confirm <round-id>`. Then lock the run you will use, before the
+   deadline: `super6 runs lock <run-id>`. Unconfirmed rounds can't be locked, and a
+   locked run can't be edited or deleted.
 6. **Enter the picks yourself** on the official Super 6 site.
 7. **Settle** after the matches: `super6 data download && super6 data ingest && super6 data goals && super6 settle <round-id>`.
    The Golden Goal is settled from goal minutes once openfootball publishes them, or pass

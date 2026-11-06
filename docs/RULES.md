@@ -34,3 +34,13 @@ When a round has staggered kick-offs and the two readings give different picks, 
 warns `GOLDEN_GOAL_STAGGERED_KICKOFFS` and shows the minute under the real-time reading.
 If the operator confirms the other reading, set
 `golden_goal_first_goal: first_in_real_time` and bump `rules_version`.
+
+**Checking the interpretation.** After a round, enter the official answer with
+`super6 settle <round-id> --golden-goal-minute <m>`. Once that round's goal minutes are
+stored (`super6 data goals`), settlement records whether the answer matches each
+reading. It is listed as "The official answer matches: …" and stored as the evaluations
+`official_matches_earliest_match_minute` and `official_matches_first_in_real_time`.
+
+Only rounds where the two readings differ are evidence. A few of them settle the
+question. The real-time answer is approximate: goal minutes plus a 47-minute first half
+and a 15-minute break.

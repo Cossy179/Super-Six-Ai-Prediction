@@ -115,6 +115,10 @@ class ScoreModel(ABC):
     refit_every_days: ClassVar[float | None] = None
     #: Short human-readable description for reports and explanations.
     description: ClassVar[str] = ""
+    #: True only for models whose tail is a deliberate "any other score" probability rather
+    #: than a grid that is too small. Their forecasts warn instead of blocking when the tail
+    #: exceeds the tolerance. Every other model is blocked (DESIGN §10.8).
+    explicit_tail: ClassVar[bool] = False
 
     def __init__(self, grid: GridSettings | None = None, **config: Any) -> None:
         self.grid = grid or GridSettings()
