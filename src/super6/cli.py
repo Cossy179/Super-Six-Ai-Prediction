@@ -242,7 +242,9 @@ def predict(round_file: str, model_name: str | None, cutoff: str | None, publish
         except CutoffAfterKickoffError as exc:
             raise click.ClickException(str(exc)) from exc
         status = fc.status.value
-        if save:
+        if save and spec.illustrative:
+            click.secho("illustrative round: forecast shown but not saved", fg="yellow")
+        elif save:
             run = persist_forecast(session, resolved, fc, publish=publish)
             status = run.status
         payload = forecast_to_json(fc, registry, status=status)

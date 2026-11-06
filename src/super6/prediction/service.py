@@ -350,9 +350,20 @@ def _upsert_round(session: Session, resolved: ResolvedRound) -> Super6Round:
     return rnd
 
 
+class IllustrativeRoundError(ValueError):
+    """Illustrative (invented) rounds must never enter the audit database."""
+
+
 def persist_forecast(session: Session, resolved: ResolvedRound, fc: RoundForecast,
                      publish: bool = False) -> PredictionRun:
-    """Write the run (idempotent: identical inputs return the existing run)."""
+    """Write the run (idempotent: identical inputs return the existing run).
+
+    Illustrative rounds are refused. Their invented fixtures would otherwise sit in the
+    fixtures table looking like real ones (e.g. in `super6 data upcoming`).
+    """
+    if resolved.spec.illustrative:
+        raise IllustrativeRoundError(
+            f"round {resolved.spec.round_id} is illustrative; it is not saved")
     existing = session.get(PredictionRun, fc.run_id)
     if existing is not None:
         return existing
