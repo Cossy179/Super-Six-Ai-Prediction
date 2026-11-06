@@ -113,5 +113,26 @@ cannot change these outcomes. They are reported for R3 below.
   neither significant.
 - So the CatBoost models' problem is not just scale. Even when correctly scaled, their
   forecasts rank outcomes worse than Dixon–Coles and the market.
-- Reused-window R3 numbers (2019–22 and 2023–26) are added below when the interrupted
-  reruns finish. They are descriptive only and cannot change R1 or R2.
+
+### R3 on the reused windows
+
+Generated output: [2019–22](2026-11-05-calibrated-catboost-reused-2019-generated-report.md),
+[2023–26](2026-11-05-calibrated-catboost-reused-2023-generated-report.md). Both reruns
+finished without errors.
+
+| Window | Model | Expected − realised points | Log loss vs uncalibrated (95% CI) |
+|---|---|---:|---|
+| 2019–22 | `catboost` → `catboost_cal` | +0.049 → −0.001 | +0.0003 [−0.0024, +0.0031] |
+| | `catboost_market` → `catboost_market_cal` | +0.049 → +0.000 | +0.0007 [−0.0018, +0.0031] |
+| 2023–26 | `catboost` → `catboost_cal` | +0.034 → −0.011 | −0.0056 [−0.0088, −0.0027] |
+| | `catboost_market` → `catboost_market_cal` | +0.034 → −0.005 | −0.0034 [−0.0058, −0.0010] |
+
+- Calibration removed the overconfidence in all three windows.
+- The log-loss effect was nil on 2018-19 and 2019–22, and a small, significant gain on
+  2023–26.
+- Even calibrated, the challengers stay behind their incumbents on log loss:
+  - `catboost_market_cal` vs `ensemble`: +0.0157 [+0.0107, +0.0205] on 2019–22 and
+    +0.0227 [+0.0162, +0.0297] on 2023–26;
+  - `catboost_cal` vs `dixon_coles`: +0.0020 [−0.0052, +0.0088] and +0.0088 [+0.0002,
+    +0.0181].
+- The R1 and R2 outcomes are unchanged.
