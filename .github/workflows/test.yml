@@ -29,10 +29,10 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -e ".[dev,postgres]"
+      - run: pip install -e ".[dev,postgres,api]"
       - name: Lint
         run: ruff check src tests scripts migrations
       - name: Type check
         run: mypy
-      - name: Tests (unit, leakage, integration, PostgreSQL migrations)
+      - name: Tests (unit, leakage, integration, API, PostgreSQL migrations)
         run: pytest

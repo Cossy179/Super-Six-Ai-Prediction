@@ -20,7 +20,6 @@ Each run is idempotent and does whatever the clock says is due:
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
@@ -49,6 +48,7 @@ from super6.prediction.round_spec import RoundSpec, load_round, resolve_round
 from super6.prediction.service import (
     LockError,
     RoundForecast,
+    equivalent_saved_run,
     forecast_round,
     persist_forecast,
     settle_round,
@@ -56,21 +56,12 @@ from super6.prediction.service import (
 from super6.rules import CompetitionRules
 from super6.storage.db import session_scope
 from super6.storage.models import (
-    FixtureForecast,
-    GoldenGoalPrediction,
     PredictionRun,
-    Recommendation,
     RunStatus,
     Super6Round,
 )
 from super6.storage.repositories import load_registry
 from super6.timeutil import UK, iso
-
-# A forecast counts as changed when a pick or the Golden Goal minute changes, or a goal rate
-# or outcome probability moves by more than this. Time-decay weights depend on the cutoff,
-# so even without new data the numbers drift by about one part in a million per hour; that
-# is not new information.
-MATERIAL_CHANGE = 1e-3
 
 
 @dataclass(frozen=True)
@@ -145,40 +136,6 @@ def _summary(fc: RoundForecast, registry: TeamRegistry) -> list[str]:
     if fc.golden_goal is not None:
         lines.append(f"Golden Goal: {fc.golden_goal.minute}")
     return lines
-
-
-def _unchanged(session: Session, round_id: str, fc: RoundForecast, spec_json: dict[str, Any]
-               ) -> PredictionRun | None:
-    """The latest saved run, if this forecast is not materially different from it."""
-    rnd = session.get(Super6Round, round_id)
-    if rnd is None or rnd.spec != spec_json:
-        return None
-    latest = session.scalars(select(PredictionRun).where(
-        PredictionRun.round_id == round_id, PredictionRun.status != RunStatus.BLOCKED.value)
-        .order_by(PredictionRun.created_at.desc())).first()
-    if latest is None or latest.code_version != fc.code_version or \
-            latest.rules_version != fc.rules.rules_version or \
-            latest.config.get("model") != json.loads(json.dumps(fc.model_config, default=str)):
-        return None
-    stored = {f.fixture_id: f for f in session.scalars(select(FixtureForecast).where(
-        FixtureForecast.run_id == latest.id))}
-    for fx, pred in zip(fc.fixtures, fc.predictions, strict=True):
-        old = stored.get(fx.fixture_id)
-        out = pred.distribution.outcome_probabilities()
-        if old is None or any(abs(a - b) > MATERIAL_CHANGE for a, b in (
-                (old.lam_home, pred.lam_home), (old.lam_away, pred.lam_away),
-                (old.p_home, out.home), (old.p_draw, out.draw), (old.p_away, out.away))):
-            return None
-    picks = {(r.mode, r.fixture_id): (r.home_goals, r.away_goals) for r in session.scalars(
-        select(Recommendation).where(Recommendation.run_id == latest.id))}
-    for obj, round_picks in fc.picks.items():
-        for fp in round_picks.fixtures:
-            if picks.get((obj.value, fp.fixture_id)) != (fp.pick.home_goals, fp.pick.away_goals):
-                return None
-    gg = session.get(GoldenGoalPrediction, latest.id)
-    if (gg.minute if gg else None) != (fc.golden_goal.minute if fc.golden_goal else None):
-        return None
-    return latest
 
 
 def _align_kickoffs(path: Path, spec: RoundSpec, history: MatchHistory, registry: TeamRegistry,
@@ -338,7 +295,8 @@ def _before_deadline(engine: Engine, path: Path, spec: RoundSpec, history: Match
             out.actions.append("already locked")
             out.run_id, out.status = locked.id, locked.status
             return out
-        same = _unchanged(session, spec.round_id, fc, spec.model_dump(mode="json"))
+        same = equivalent_saved_run(session, spec.round_id, fc,
+                                    spec.model_dump(mode="json"))
         if same is not None:
             run = same
             out.actions.append("forecast unchanged")

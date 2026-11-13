@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
@@ -19,7 +20,7 @@ from super6.domain import FixtureSpec, MarketOdds
 from super6.ingestion.adapters.football_data_couk import fixture_key
 from super6.ingestion.canonicalize import TeamRegistry, UnknownTeamError
 from super6.rules import CompetitionRules
-from super6.timeutil import UK
+from super6.timeutil import UK, iso
 
 ROUND_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{2,63}$")
 
@@ -81,6 +82,18 @@ class RoundSpec(BaseModel):
 def load_round(path: str | Path) -> RoundSpec:
     with Path(path).open(encoding="utf-8") as fh:
         return RoundSpec.model_validate(yaml.safe_load(fh))
+
+
+def confirm_round_file(path: Path, source: str, now: datetime | None = None) -> RoundSpec:
+    """Record in a round file that a person checked its six fixtures: when and how."""
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    RoundSpec.model_validate(data)  # validate before changing anything
+    data.update(confirmed=True, confirmed_at=iso(now or datetime.now(UTC)),
+                confirmed_source=source)
+    spec = RoundSpec.model_validate(data)
+    path.write_text("# Fixtures confirmed against the Super 6 app.\n"
+                    + yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    return spec
 
 
 @dataclass

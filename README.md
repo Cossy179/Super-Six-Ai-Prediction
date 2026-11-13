@@ -21,7 +21,7 @@ See [Status](#status).
 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e ".[dev,api]"
 
 super6 db init                 # SQLite at data/super6.db (set SUPER6_DATABASE_URL for Postgres)
 super6 data download           # Football-Data.co.uk CSVs, 2016-17 → current season
@@ -111,6 +111,10 @@ run `super6 replay-rounds rounds/history` (see `docs/OPERATIONS.md`).
 Other commands: `super6 runs list`, `super6 runs show <id>`, `super6 ratings --competition E0`,
 `super6 backtest --start 2023-07-01 --end 2026-11-05`, and `super6 --help`.
 
+**REST API:** `pip install -e ".[api]"`, then `super6 serve` and open
+`http://127.0.0.1:8000/api/docs`. It serves rounds, forecasts, score grids, explanations
+and performance. See [`docs/API.md`](docs/API.md).
+
 ## What is implemented
 
 | Area | Module | Notes |
@@ -123,11 +127,13 @@ Other commands: `super6 runs list`, `super6 runs show <id>`, `super6 ratings --c
 | Score grid | `prediction/score_grid.py` | Adaptive grid with explicit tail mass; never silently renormalised |
 | Optimiser | `prediction/optimiser.py` | Jackpot and points modes with deterministic tie-breaks |
 | Golden Goal | `golden_goal/` | Goal-time profiles (uniform default; empirical from openfootball goal minutes, [experiment 006](docs/experiments/2026-11-06-golden-goal-profile.md)), exact earliest-minute distribution, closest-minute median, settlement from stored goal minutes |
+| REST API | `api/` | FastAPI over stored runs: rounds, forecasts, score grids, explanations, performance, health; token-protected, audit-logged admin |
 | Evaluation | `evaluation/` | Walk-forward replay, paired block bootstrap, calibration, synthetic rounds (labelled as such) |
 
 ## Status
 
-Phases 1–3 of the [roadmap](DESIGN.md#20-delivery-roadmap) are complete. See
+Phases 1–3 of the [roadmap](DESIGN.md#20-delivery-roadmap) are complete and Phase 4 has
+started. See
 [`docs/PHASE_STATUS.md`](docs/PHASE_STATUS.md).
 
 - **Phase 1:** data foundation, point-in-time views, baselines and the statistical MVP.
@@ -144,19 +150,20 @@ market-first ensemble and the uniform Golden Goal profile. Not yet built:
 
 - xG evaluation, which needs more xG history (see the experiment index).
 - Champions League fixtures (needs a football-data.org API key).
-- FastAPI service and Next.js dashboard (Phase 4). The JSON written by
-  `predict --json` already follows the API response shape in DESIGN §15.1.
+- The Next.js dashboard and hosted deployment (the rest of Phase 4). The REST API is
+  built: see [`docs/API.md`](docs/API.md).
 
 ## Development
 
 ```bash
 ruff check src tests scripts migrations
 mypy                      # strict
-pytest                    # unit, leakage, integration
+pytest                    # unit, leakage, integration, API
 SUPER6_TEST_POSTGRES_URL=postgresql+psycopg://user:pass@localhost/db pytest -m postgres
 ```
 
-See [`docs/OPERATIONS.md`](docs/OPERATIONS.md), [`docs/DATA_DICTIONARY.md`](docs/DATA_DICTIONARY.md)
+See [`docs/OPERATIONS.md`](docs/OPERATIONS.md), [`docs/API.md`](docs/API.md),
+[`docs/DATA_DICTIONARY.md`](docs/DATA_DICTIONARY.md)
 and [`docs/MODEL_CARD.md`](docs/MODEL_CARD.md).
 
 ## Data and attribution
