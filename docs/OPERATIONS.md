@@ -8,6 +8,8 @@
 | `SUPER6_DATA_DIR` | `data/` | Raw downloads (`data/raw/football_data_couk/<season>/<code>.csv` + `.meta.json`) |
 | `SUPER6_REPORTS_DIR` | `reports/` | Backtest output |
 | `SUPER6_HOME` | auto-detected | Directory containing `configs/` |
+| `SUPER6_ADMIN_TOKEN` | unset | Enables the API's admin endpoints (at least 24 characters) |
+| `SUPER6_CORS_ORIGINS` | none | Browser origins allowed to call the API, comma-separated |
 
 Secrets (database passwords, future API keys) belong in `.env` or a secrets manager,
 never in the repository.
@@ -56,6 +58,18 @@ Alternatively, record the official minute from the app:
 official minute always replaces one worked out from goal minutes. It is also the only
 way to settle under the `first_in_real_time` reading, which needs wall-clock goal times.
 Each run's Golden Goal error is stored either way.
+
+## The REST API
+
+`super6 serve` (or `docker compose up -d api`) serves stored rounds and forecasts on
+`http://127.0.0.1:8000`, with documentation at `/api/docs`. See [API.md](API.md).
+
+- Read endpoints need no token.
+- Admin endpoints are off unless `SUPER6_ADMIN_TOKEN` is set (`super6 admin-token` makes
+  one). Every admin change is appended to `reports/admin_audit.jsonl`.
+- `GET /api/v1/health` is the place to look first when something seems wrong. It reports
+  data freshness, the current round's state, when the hourly cycle last ran, and recent
+  alerts.
 
 ## Confirming a round's fixtures
 

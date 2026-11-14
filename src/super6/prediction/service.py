@@ -222,14 +222,19 @@ def forecast_round(
 
 
 # --------------------------------------------------------------------------- output
-def forecast_basis(pred: Prediction) -> str:
-    """What drove a fixture's forecast: bookmaker odds, results-based model, or a baseline."""
-    applied = pred.details.get("market_weight_applied")
+def basis_from(model: str, details: Mapping[str, Any]) -> str:
+    """What drove a forecast, from the model name and its stored per-fixture details."""
+    applied = details.get("market_weight_applied")
     if applied is not None:
         return "market odds" if applied >= 1.0 else ("blend" if applied > 0 else "results model")
-    if pred.model == "market_poisson":
-        return "baseline (no odds)" if "fallback" in pred.details else "market odds"
-    return "results model" if pred.model in ("dixon_coles", "poisson") else pred.model
+    if model == "market_poisson":
+        return "baseline (no odds)" if "fallback" in details else "market odds"
+    return "results model" if model in ("dixon_coles", "poisson") else model
+
+
+def forecast_basis(pred: Prediction) -> str:
+    """What drove a fixture's forecast: bookmaker odds, results-based model, or a baseline."""
+    return basis_from(pred.model, pred.details)
 
 
 
@@ -311,7 +316,8 @@ class RoundConflictError(RuntimeError):
     pass
 
 
-def _upsert_round(session: Session, resolved: ResolvedRound) -> Super6Round:
+def upsert_round(session: Session, resolved: ResolvedRound) -> Super6Round:
+    """Create or update the stored round (refused once it has a locked run)."""
     spec = resolved.spec
     spec_json = spec.model_dump(mode="json")
     rnd = session.get(Super6Round, spec.round_id)
@@ -377,7 +383,7 @@ def persist_forecast(session: Session, resolved: ResolvedRound, fc: RoundForecas
     existing = session.get(PredictionRun, fc.run_id)
     if existing is not None:
         return existing
-    _upsert_round(session, resolved)
+    upsert_round(session, resolved)
     register_feature_snapshot(session, fc.training_fingerprint, fc.cutoff.to_pydatetime(),
                               fc.n_training_matches)
     entry = register_model(session, model_name=fc.model_name, code_version=fc.code_version,
@@ -433,6 +439,47 @@ def persist_forecast(session: Session, resolved: ResolvedRound, fc: RoundForecas
     if publish and fc.status is RunStatus.VALIDATED:
         transition_run(session, run, RunStatus.PUBLISHED)
     return run
+
+
+# A forecast counts as changed when a pick or the Golden Goal minute changes, or a goal rate
+# or outcome probability moves by more than this. Time-decay weights depend on the cutoff,
+# so even without new data the numbers drift by about one part in a million per hour; that
+# is not new information.
+MATERIAL_CHANGE = 1e-3
+
+
+def equivalent_saved_run(session: Session, round_id: str, fc: RoundForecast,
+                         spec_json: dict[str, Any]) -> PredictionRun | None:
+    """The latest saved run, if this forecast is not materially different from it."""
+    rnd = session.get(Super6Round, round_id)
+    if rnd is None or rnd.spec != spec_json:
+        return None
+    latest = session.scalars(select(PredictionRun).where(
+        PredictionRun.round_id == round_id, PredictionRun.status != RunStatus.BLOCKED.value)
+        .order_by(PredictionRun.created_at.desc())).first()
+    if latest is None or latest.code_version != fc.code_version or \
+            latest.rules_version != fc.rules.rules_version or \
+            latest.config.get("model") != json.loads(json.dumps(fc.model_config, default=str)):
+        return None
+    stored = {f.fixture_id: f for f in session.scalars(select(FixtureForecast).where(
+        FixtureForecast.run_id == latest.id))}
+    for fx, pred in zip(fc.fixtures, fc.predictions, strict=True):
+        old = stored.get(fx.fixture_id)
+        out = pred.distribution.outcome_probabilities()
+        if old is None or any(abs(a - b) > MATERIAL_CHANGE for a, b in (
+                (old.lam_home, pred.lam_home), (old.lam_away, pred.lam_away),
+                (old.p_home, out.home), (old.p_draw, out.draw), (old.p_away, out.away))):
+            return None
+    picks = {(r.mode, r.fixture_id): (r.home_goals, r.away_goals) for r in session.scalars(
+        select(Recommendation).where(Recommendation.run_id == latest.id))}
+    for obj, round_picks in fc.picks.items():
+        for fp in round_picks.fixtures:
+            if picks.get((obj.value, fp.fixture_id)) != (fp.pick.home_goals, fp.pick.away_goals):
+                return None
+    gg = session.get(GoldenGoalPrediction, latest.id)
+    if (gg.minute if gg else None) != (fc.golden_goal.minute if fc.golden_goal else None):
+        return None
+    return latest
 
 
 class LockError(RuntimeError):

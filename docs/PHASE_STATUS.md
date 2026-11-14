@@ -81,7 +81,25 @@ These items come from the 6 November 2026 repository review. The question is no 
 | Line-ups, injuries | Fantasy Premier League API | Public but unofficial and undocumented, with no stated terms for automated use: the owner's call |
 | Champions League | openfootball/champions-league (CC0) | Results for 2024-25 and 2025-26 (189 matches each), without goal minutes; no 2026-27 yet. Current fixtures need football-data.org (free key) |
 
-## Phase 4: dashboard and production readiness (not started)
+## Phase 4: dashboard and production readiness (in progress)
 
-FastAPI service (DESIGN §15), Next.js dashboard, explanations, authenticated admin, and
-deployment.
+| Build item | Status |
+|---|---|
+| FastAPI application | ✓ `super6 serve`; every endpoint in DESIGN §15, plus a round archive. See [API.md](API.md) |
+| Match-level explanations | ✓ `GET /fixtures/{id}/explanation`: odds used, model, recent results, and why each pick was made |
+| Authenticated administration | ✓ Bearer token (off unless set), throttled, audit-logged: import, confirm, forecast, lock, settle |
+| Metrics history | ✓ API: `GET /performance` (live rounds, locked or unlocked, and backtests). ⧗ Charts |
+| Next.js dashboard, probability charts, comparison mode | ⧗ Next |
+| Deployment | ⧗ A Compose `api` service exists (local only). Hosted deployment with HTTPS is still to do |
+| Operational documentation | ✓ API. ⧗ Dashboard and deployment |
+
+| Exit criterion | Status |
+|---|---|
+| Full end-to-end test pass | ✓ API: a round is taken from import to settlement over HTTP. ⧗ Dashboard |
+| Acceptable latency | ✓ API read endpoints answer in under 0.11 s on the development database |
+| Provenance and health visible | ✓ In the API (`/health`, odds basis, model version, run status). ⧗ In the dashboard |
+| Manual entry workflow clear | ⧗ Dashboard |
+| No claims unsupported by the model evidence | ✓ API responses carry `is_locked`, warnings with plain-English meanings, and locked/unlocked labels on live results |
+
+The API lives in `src/super6/api/` (not `apps/api/` as DESIGN §18 sketched), so it ships
+with the package and is type-checked and tested with it.

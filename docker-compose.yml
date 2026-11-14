@@ -5,6 +5,7 @@
 #   docker compose run --rm super6 data ingest
 #   docker compose run --rm super6 predict rounds/example-round.yaml
 #   docker compose up -d scheduler          # runs `super6 cycle` every hour
+#   docker compose up -d api                # REST API on http://127.0.0.1:8000/api/docs
 services:
   db:
     image: postgres:16
@@ -50,6 +51,29 @@ services:
     entrypoint: ["sh", "-c"]
     # Errors are reported through alerts; the loop keeps going either way.
     command: ["while true; do super6 cycle || true; sleep 3600; done"]
+    volumes:
+      - ./data:/app/data
+      - ./reports:/app/reports
+      - ./rounds:/app/rounds
+      - ./configs:/app/configs:ro
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      SUPER6_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-super6}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-super6}
+      SUPER6_DATA_DIR: /app/data
+      SUPER6_REPORTS_DIR: /app/reports
+      # Unset = admin endpoints are switched off. Generate one with `super6 admin-token`.
+      SUPER6_ADMIN_TOKEN: ${SUPER6_ADMIN_TOKEN:-}
+      SUPER6_CORS_ORIGINS: ${SUPER6_CORS_ORIGINS:-}
+    command: ["serve", "--host", "0.0.0.0", "--port", "8000"]
+    # Local only. To expose it, put a reverse proxy with HTTPS and rate limiting in front.
+    ports:
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./data:/app/data
       - ./reports:/app/reports

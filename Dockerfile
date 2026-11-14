@@ -5,7 +5,7 @@ WORKDIR /app
 
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
-RUN pip install --no-cache-dir ".[postgres]"
+RUN pip install --no-cache-dir ".[postgres,api]"
 
 COPY alembic.ini ./
 COPY configs ./configs

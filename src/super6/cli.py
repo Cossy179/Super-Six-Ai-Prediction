@@ -471,20 +471,12 @@ def round_fetch(ctx: click.Context, round_number: int | None, round_date: str | 
               show_default=True, help="How the six fixtures were checked (recorded in the file)")
 def round_confirm(round_id: str, confirmed_source: str) -> None:
     """Record that a round's fixtures were checked against the Super 6 app."""
-    import yaml as yaml_mod
-
-    from super6.prediction.round_spec import RoundSpec
+    from super6.prediction.round_spec import confirm_round_file
 
     path = project_root() / "rounds" / f"{round_id}.yaml"
     if not path.exists():
         raise click.ClickException(f"no round file {path}")
-    data = yaml_mod.safe_load(path.read_text(encoding="utf-8"))
-    load_round(path)  # validate before changing anything
-    data.update(confirmed=True, confirmed_at=iso(datetime.now(UTC)),
-                confirmed_source=confirmed_source)
-    RoundSpec.model_validate(data)
-    path.write_text("# Fixtures confirmed against the Super 6 app.\n"
-                    + yaml_mod.safe_dump(data, sort_keys=False), encoding="utf-8")
+    confirm_round_file(path, confirmed_source)
     click.echo(f"{round_id} confirmed ({confirmed_source}); the next forecast can be locked")
 
 
@@ -889,6 +881,29 @@ def ratings(cutoff: str | None, competition: str, model_name: str) -> None:
     click.echo(_table(["team", "attack", "defence", "net", "eff. matches"], [
         [names.get(str(t), str(t)), f"{r.attack:+.3f}", f"{r.defence:+.3f}", f"{r.net:+.3f}",
          f"{r.effective_matches:.1f}"] for t, r in table.iterrows()]))
+
+
+# --------------------------------------------------------------------------- api
+@main.command()
+@click.option("--host", default="127.0.0.1", show_default=True,
+              help="Use 0.0.0.0 only behind a reverse proxy that adds HTTPS")
+@click.option("--port", type=int, default=8000, show_default=True)
+def serve(host: str, port: int) -> None:
+    """Run the REST API (docs at /api/docs). Needs the `api` extra."""
+    try:
+        import uvicorn
+    except ImportError as exc:
+        raise click.ClickException(
+            'the API needs extra packages: pip install "super6-ai[api]"') from exc
+    uvicorn.run("super6.api.app:create_app", factory=True, host=host, port=port)
+
+
+@main.command("admin-token")
+def admin_token() -> None:
+    """Print a new random token for SUPER6_ADMIN_TOKEN (keep it out of git)."""
+    import secrets
+
+    click.echo(secrets.token_urlsafe(32))
 
 
 def load_registry_names(session: Any) -> dict[str, str]:

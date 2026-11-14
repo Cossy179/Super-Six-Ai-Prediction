@@ -15,7 +15,7 @@ then fewer home goals.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 
 import numpy as np
@@ -25,6 +25,10 @@ from super6.prediction.score_grid import ScoreDistribution
 from super6.rules import CompetitionRules
 
 TIE_BREAK_RULE = "objective desc, exact-score probability desc, total goals asc, home goals asc"
+JOINT_ASSUMPTIONS: tuple[str, ...] = (
+    "Joint probability multiplies per-fixture probabilities, i.e. assumes match "
+    "scores are independent and ignores parameter uncertainty.",
+)
 _ROUND = 12  # decimal places used when comparing floating-point objective values
 
 
@@ -61,12 +65,7 @@ class RoundPicks:
     fixtures: tuple[FixturePicks, ...]
     expected_points: float
     joint_exact_probability: float
-    assumptions: tuple[str, ...] = field(
-        default=(
-            "Joint probability multiplies per-fixture probabilities, i.e. assumes match "
-            "scores are independent and ignores parameter uncertainty.",
-        )
-    )
+    assumptions: tuple[str, ...] = JOINT_ASSUMPTIONS
 
 
 def expected_points(
